@@ -22,7 +22,7 @@ RO="nr_modem_a nr_modem_b nr_phy_a nr_phy_b nr_phy_npi_a nr_phy_npi_b pm_sys_a p
 l_agdsp_a l_agdsp_b"
 say() { echo "modem-start: $*"; echo "modem-start: $*" > /dev/kmsg 2>/dev/null; }
 # OpenWrt's busybox has no losetup or truncate
-BB=/opt/mu300/bin/busybox
+BB=/opt/mu5358/bin/busybox
 losetup() { $BB losetup "$@"; }
 
 # sparse DEV FILE: the partition into FILE, its all-zero MiBs left as holes (tmpfs keeps no RAM for them: the NV
@@ -122,8 +122,8 @@ case $1 in
         for n in modem pmsys chsys cp_dump phycp; do
             [ -e $D/$n ] && chown 1000:1000 $D/$n && chmod 0660 $D/$n
         done
-        if [ ! -S $D/socket/logdw ] && [ -x /opt/mu300/bin/logdw ]; then
-            /opt/mu300/bin/logdw $D/socket/logdw >> /tmp/android-logcat.txt 2>&1 &
+        if [ ! -S $D/socket/logdw ] && [ -x /opt/mu5358/bin/logdw ]; then
+            /opt/mu5358/bin/logdw $D/socket/logdw >> /tmp/android-logcat.txt 2>&1 &
         fi
         run modem_control ;;
     diskserver|refnotify)

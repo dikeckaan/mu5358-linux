@@ -1,0 +1,18 @@
+--- a/drivers/usb/phy/phy-sprd-ums9632.c	2026-10-30 11:14:56.796587676 +0000
++++ b/drivers/usb/phy/phy-sprd-ums9632.c	2026-10-30 11:14:56.797488510 +0000
+@@ -39,6 +39,7 @@
+ #define AON_USB20_POWER_CTRL		0x0350		/* MIPI_CSI_POWER_CTRL on the qogirn6pro */
+ #define  AON_USB20_PS_PD_S		BIT(1)
+ #define  AON_USB20_PS_PD_L		BIT(0)
++#define  AON_USB20_BIT5			BIT(5)		/* set by the vendor kernel with a host attached (2026-10-30) */
+ 
+ /* analog USB20 */
+ #define ANA_UTMI_CTL1			0x0004
+@@ -87,6 +88,7 @@
+ {
+ 	if (on) {
+ 		sprd_ums9632_set(p->aon, AON_USB20_POWER_CTRL, AON_USB20_PS_PD_S | AON_USB20_PS_PD_L, false);
++		sprd_ums9632_set(p->aon, AON_USB20_POWER_CTRL, AON_USB20_BIT5, true);
+ 		sprd_ums9632_set(p->ana, ANA_USB20_PHY, ANA_ISO_SW_EN, false);
+ 		sprd_ums9632_set(p->aon, AON_SOC_USB_CTRL, AON_USB20_ISO_SW_EN, false);
+ 	} else {

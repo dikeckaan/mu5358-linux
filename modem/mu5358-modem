@@ -1,6 +1,6 @@
 #!/bin/sh /etc/rc.common
 # U30 Pro: Android's modem daemons in their chroot (/opt/mu5358/bin/modem-start): modem_control loads the CP,
-# cp_diskserver serves its NV from RAM copies, refnotify its time. Before mu300-atd (S19), which waits for the AT ttys.
+# cp_diskserver serves its NV from RAM copies, refnotify its time. Before mu5358-atd (S19), which waits for the AT ttys.
 START=15
 USE_PROCD=1
 

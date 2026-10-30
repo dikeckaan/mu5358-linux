@@ -1,0 +1,55 @@
+name: Tests
+
+# tests/: the static rules over every script (slot a, the NV partitions and misc never written where they must not
+# be; no telnet; the password; the rebrand), the installer's helpers under a Linux busybox (docker), the web
+# installer's JavaScript under Node, and the website staged as it is published. Run locally with:
+#   python3 -m unittest discover -s tests -v
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: versions
+        run: |
+          python3 --version
+          node --version
+          sh --version 2>/dev/null || dpkg -S "$(readlink -f /bin/sh)"
+          docker --version
+      - name: busybox for the installer's helpers
+        run: docker pull -q busybox:stable
+      - name: unit tests (static rules, installer under busybox, web, site)
+        run: python3 -m unittest discover -s tests -v
+      - name: the web installer's JavaScript tests
+        run: node --test tests/web/
+
+  site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: stage the site as pages.yml does
+        run: sh site/tools/stage.sh out
+      - name: the staged pages carry the three languages
+        run: |
+          set -e
+          for f in index.html:en tr/index.html:tr zh/index.html:zh-Hans \
+                   web-installer/index.html:en tr/web-installer/index.html:tr zh/web-installer/index.html:zh-Hans; do
+            p=out/${f%%:*}; lang=${f#*:}
+            [ -f "$p" ] || { echo "$p is not staged" >&2; exit 1; }
+            grep -q "<html lang=\"$lang\">" "$p" || { echo "$p: not lang=$lang" >&2; exit 1; }
+            for l in en tr zh-Hans; do grep -q "hreflang=\"$l\"" "$p" || { echo "$p: no hreflang=$l" >&2; exit 1; }; done
+            echo "ok $p ($lang)"
+          done
+          [ ! -e out/tools ] || { echo "site/tools was staged" >&2; exit 1; }
+          [ -f out/assets/web-installer/strings.js ] || { echo "strings.js not staged" >&2; exit 1; }
+          grep -c '^const \(en\|tr\|zh\) = {' out/assets/web-installer/strings.js | grep -qx 3

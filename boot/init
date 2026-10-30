@@ -1,7 +1,8 @@
 #!/mu/busybox sh
 # MU5358 (ZTE U30 Pro) Linux initramfs. Adapted from mu300-linux's boot/init: the GKI 6.6 kernel and the stock
 # vendor modules, a USB gadget (NCM + ACM console), misc back to Android, then switch_root into the system on the
-# eMMC region behind userdata (ext4 labelled mu5358root). Without one it stays here with telnet on 192.168.58.1.
+# eMMC (ext4 labelled mu5358root on fulldumpdb, or in the region behind userdata). Without one it stays here, a shell
+# on the ACM console only (no telnet: the system's SSH is the way in).
 #
 # This ramdisk goes into init_boot_b. LK unpacks vendor_boot's ramdisk (Android's first stage and recovery files,
 # /lib/modules) and then this one on top of it, so /init is this script and the modules are vendor_boot's. Our own
@@ -32,17 +33,52 @@ ln -sf pts/ptmx /dev/ptmx
 mount -t tmpfs tmpfs /run
 mount -t tmpfs tmpfs /tmp
 
-# Persistent log: the stages also go to the last MiB of the Linux region behind userdata (sectors 122152960 on, up
-# to the GPT's last usable sector), so that Android can read how far a boot got: pstore was empty after the first
-# trial. Written once the eMMC is there (after the modules), and again at every stage from then on.
-LOGSEC=122152960
+# Persistent log: the stages also go to the last MiB of the Linux system's home, so that Android can read how far a
+# boot got (pstore was empty after the first trial): of fulldumpdb when the system is there (the installer's layout),
+# else of the region behind userdata (its last MiB: sectors 122152960 on, on the bench unit). Only once
+# find_home has found the system's label at one of the two: on a board with neither, those sectors are Android's
+# userdata, and nothing is written to the eMMC. find_home runs as soon as the eMMC is there (after the modules).
+LOGDEV= LOGSEC=
+ROOTDEV= ROOTOFF=
+part_named() {  # part_named NAME: /dev/mmcblk0pN of that GPT name
+    for p in /sys/class/block/mmcblk0p*; do
+        [ "$(sed -n 's/^PARTNAME=//p' "$p/uevent" 2>/dev/null)" = "$1" ] && { echo "/dev/${p##*/}"; return 0; }
+    done
+    return 1
+}
+# the label sits 1144 bytes into an ext4 (the superblock at 1024, s_volume_name at +120)
+has_label() { [ "$(dd if="$1" bs=1 skip=$(($2 + 1144)) count=10 2>/dev/null)" = mu5358root ]; }
+find_home() {
+    [ -b /dev/mmcblk0 ] || return 1
+    p=$(part_named fulldumpdb) && [ -b "$p" ] && has_label "$p" 0 && {
+        ROOTDEV=$p ROOTOFF=0 LOGDEV=$p LOGSEC=$(( $(cat "/sys/class/block/${p##*/}/size") - 2048 ))
+        return 0
+    }
+    # the region: the first 2 MiB boundary behind the last GPT partition (userdata), the rule of mu300-linux's
+    # find_root_offset; a loop device with that offset, the region is not a partition
+    end=0
+    for p in /sys/class/block/mmcblk0p*; do
+        e=$(( $(cat "$p/start") + $(cat "$p/size") ))
+        [ $e -gt $end ] && end=$e
+    done
+    off=$(( (end + 4095) / 4096 * 4096 ))
+    # its log: the last MiB of the GPT's usable area (the primary header's last usable LBA, at byte 48 of LBA 1),
+    # 122152960 on the bench unit
+    last=$(dd if=/dev/mmcblk0 bs=512 skip=1 count=1 2>/dev/null | od -An -tu8 -j48 -N8 | tr -d ' ')
+    [ -n "$last" ] && has_label /dev/mmcblk0 $((off * 512)) && [ $off -lt $((last + 1 - 2048)) ] && {
+        ROOTDEV=/dev/mmcblk0 ROOTOFF=$((off * 512)) LOGDEV=/dev/mmcblk0 LOGSEC=$((last + 1 - 2048))
+        return 0
+    }
+    return 1
+}
 log() {
     echo "<3>MU5358-LINUX: $*" > /dev/kmsg
     echo "$(cut -d' ' -f1 /proc/uptime) $*" >> /run/stages
-    if [ -b /dev/mmcblk0 ]; then
+    [ -z "$LOGDEV" ] && [ -z "$home_tried" ] && [ -b /dev/mmcblk0 ] && { home_tried=1; find_home; }
+    if [ -n "$LOGDEV" ]; then
         { echo "MU5358-STAGES-BEGIN"; cat /run/stages; echo "MU5358-STAGES-END"; } > /run/stages.blk
         head -c 4096 /dev/zero >> /run/stages.blk
-        dd if=/run/stages.blk of=/dev/mmcblk0 bs=512 seek=$LOGSEC count=8 conv=notrunc,fsync 2>/dev/null
+        dd if=/run/stages.blk of="$LOGDEV" bs=512 seek=$LOGSEC count=8 conv=notrunc,fsync 2>/dev/null
     fi
 }
 log "stage=init-start"
@@ -75,9 +111,41 @@ load() {
         grep -q 'File exists' /run/insmod.err || bad="$bad $(basename "${1%.ko}")"
     fi
 }
+# The order: build-initboot.py's /mu/module-order, or, in a ramdisk the installer made on the device (it has no
+# vendor_boot to read), the same worked out here from vendor_boot's modules.dep - without audio-misc and what needs
+# it: procd's udevtrigger hits a freed class name in it, an oops every few boots (2026-10-29).
+if [ ! -s /mu/module-order ]; then
+    awk -v EX=audio-misc.ko '
+function base(p) { sub(/.*\//, "", p); return p }
+function visit(m,   i, n, d) {
+    if (m in seen) return
+    seen[m] = 1
+    n = split(dep[m], d, " ")
+    for (i = 1; i <= n; i++) visit(d[i])
+    print m
+}
+FNR == NR { k = $1; sub(/:$/, "", k); k = base(k); v = ""; for (i = 2; i <= NF; i++) v = v " " base($i); dep[k] = v; next }
+FNR == 1 && !started {
+    started = 1
+    n = split(EX, e, " ")
+    for (i = 1; i <= n; i++) out[e[i]] = 1
+    do {
+        more = 0
+        for (m in dep) if (!(m in out)) {
+            c = split(dep[m], d, " ")
+            for (i = 1; i <= c; i++) if (d[i] in out) { out[m] = 1; more = 1; break }
+        }
+    } while (more)
+    for (m in out) seen[m] = 1
+}
+NF { visit($1) }' /lib/modules/modules.dep /lib/modules/modules.load.recovery > /run/module-order
+    log "stage=module-order made=$(wc -l < /run/module-order)"
+else
+    cp /mu/module-order /run/module-order
+fi
 while read -r m; do
     [ -f "/lib/modules/$m" ] && load "/lib/modules/$m"
-done < /mu/module-order
+done < /run/module-order
 for m in /mu/modules/*.ko; do [ -f "$m" ] && load "$m"; done
 log "stage=modules loaded=$n failed=[${bad# }]"
 mdev -s
@@ -114,7 +182,7 @@ else
 fi
 
 # USB: NCM + ACM console in one configuration (the gadget mu300-linux uses; macOS, Linux and Windows 10+ bind it).
-# Named linux like mu300's: its OpenWrt's LAN hook (hotplug.d/iface/10-mu300-usb) re-enumerates usb_gadget/linux
+# Named linux like mu300's: its OpenWrt's LAN hook (hotplug.d/iface/10-mu5358-usb) re-enumerates usb_gadget/linux
 # once netifd has the LAN up, without which macOS keeps the link inactive (the first OpenWrt boot, 2026-10-29).
 mount -t configfs configfs /config
 g=/config/usb_gadget/linux
@@ -165,7 +233,6 @@ option lease 600
 EOF
 touch /run/udhcpd.leases
 udhcpd /run/udhcpd.conf
-telnetd -l /mu/bin/sh
 log "stage=net-up if=$ifc ip=192.168.58.1"
 
 # a shell on the ACM console as well, for when the network does not come up
@@ -176,35 +243,70 @@ mdev -s
 done) &
 console=$!
 
-# The system: ext4 labelled mu5358root at the first 2 MiB boundary behind the last GPT partition (userdata), the
-# rule of mu300-linux's find_root_offset. Its label sits 1144 bytes in (the superblock at 1024, s_volume_name at
-# +120). Mounted through a loop device with that offset: the region is not a partition.
-root_off=
-end=0
-for p in /sys/class/block/mmcblk0p*; do
-    e=$(( $(cat "$p/start") + $(cat "$p/size") ))
-    [ $e -gt $end ] && end=$e
-done
-off=$(( (end + 4095) / 4096 * 4096 ))
-if [ "$(dd if=/dev/mmcblk0 bs=1 skip=$((off * 512 + 1144)) count=10 2>/dev/null)" = mu5358root ]; then
-    root_off=$((off * 512))
+# The system (find_home): ext4 labelled mu5358root on fulldumpdb, or in the region behind userdata
+if [ -z "$ROOTDEV" ]; then
+    mdev -s
+    find_home
 fi
-if [ -z "$root_off" ]; then
-    log "stage=no-root (searched sector $off) - staying in the initramfs"
+if [ -z "$ROOTDEV" ]; then
+    log "stage=no-root (fulldumpdb and the region behind userdata) - staying in the initramfs"
     log "stage=ready"
     while :; do sleep 3600; done
 fi
 mkdir -p /newroot
 loopdev=$(losetup -f)
-mdev -s
-losetup -o "$root_off" "$loopdev" /dev/mmcblk0
-if ! mount -t ext4 -o noatime "$loopdev" /newroot; then
-    log "stage=root-mount-FAILED loop=$loopdev offset=$root_off"
-    losetup -d "$loopdev"
+if [ "$ROOTDEV" = /dev/mmcblk0 ]; then
+    losetup -o "$ROOTOFF" "$loopdev" /dev/mmcblk0
+    rootsrc=$loopdev
+else
+    rootsrc=$ROOTDEV
+fi
+# The root filesystem's own record of errors, read before it is mounted (mu300-linux's root_fsck, FINDINGS 182):
+# ext4 sets ERROR_FS (bit 1 of s_state, superblock byte 58) when it finds corruption, and nothing cleared it - every
+# later boot mounted the damaged filesystem as it was; this board resets on an oops (panic_on_oops) and loses power
+# with it. One byte is read on a clean filesystem; only with the bit set does the ramdisk's static e2fsck
+# (tools/e2fsck/build.sh) run, -fy, on the unmounted device. Never a reason not to boot: whatever e2fsck says, or
+# after FSCK_TIMEOUT seconds (stopped then, TERM first), the boot goes on. mu5358.fsck=force|off on the command line.
+FSCK=/mu/e2fsck FSCK_TIMEOUT=120
+FSCK_MODE=$(sed -n 's/.*mu5358\.fsck=\([a-z]*\).*/\1/p' /proc/cmdline)
+root_fsck() {  # root_fsck DEV: always true
+    [ "$FSCK_MODE" != off ] || return 0
+    _st=$(dd if="$1" bs=1 skip=1082 count=1 2>/dev/null | od -An -tu1 | tr -d ' \n')
+    case $_st in ''|*[!0-9]*) return 0 ;; esac
+    [ $((_st & 2)) != 0 ] || [ "$FSCK_MODE" = force ] || return 0
+    _ec=$(dd if="$1" bs=1 skip=1428 count=4 2>/dev/null | od -An -tu1 | awk 'NF { print $1 + $2 * 256 + $3 * 65536 + $4 * 16777216; exit }')
+    if [ ! -x "$FSCK" ]; then
+        log "stage=fsck-unavailable dev=$1 state=$_st errors=$_ec (no e2fsck in this ramdisk; booting as it is)"
+        return 0
+    fi
+    log "stage=fsck-start dev=$1 state=$_st errors=$_ec timeout=${FSCK_TIMEOUT}s"
+    # the clock may be anywhere before NTP: no "last mount time in the future" repairs because of it
+    printf '[options]\n\tbroken_system_clock = 1\n' > /run/e2fsck.conf
+    E2FSCK_CONFIG=/run/e2fsck.conf "$FSCK" -fy "$1" > /run/fsck.log 2>&1 </dev/null &
+    _fp=$!
+    rm -f /run/fsck.done
+    ( sleep "$FSCK_TIMEOUT"; [ -e /run/fsck.done ] && exit 0
+      log "stage=fsck-TIMEOUT dev=$1 after ${FSCK_TIMEOUT}s (stopping it; booting as it is)"
+      kill -TERM "$_fp" 2>/dev/null; sleep 15; [ -e /run/fsck.done ] || kill -KILL "$_fp" 2>/dev/null ) &
+    _fw=$!
+    wait "$_fp"; _rc=$?
+    : > /run/fsck.done
+    kill "$_fw" 2>/dev/null
+    _last=$(grep -v '^$' /run/fsck.log | tail -n 1)
+    case $_rc in
+        0|1|2|3) log "stage=fsck-done dev=$1 rc=$_rc: $_last" ;;
+        *) log "stage=fsck-FAILED dev=$1 rc=$_rc (booting anyway): $_last" ;;
+    esac
+    return 0
+}
+root_fsck "$rootsrc"
+if ! mount -t ext4 -o noatime "$rootsrc" /newroot; then
+    log "stage=root-mount-FAILED dev=$rootsrc offset=$ROOTOFF"
+    [ "$rootsrc" = "$loopdev" ] && losetup -d "$loopdev"
     log "stage=ready"
     while :; do sleep 3600; done
 fi
-log "stage=root-mounted loop=$loopdev offset=$root_off"
+log "stage=root-mounted dev=$rootsrc offset=$ROOTOFF log=$LOGDEV@$LOGSEC"
 init=/sbin/init
 [ -x "/newroot$init" ] || init=/lib/systemd/systemd
 if [ ! -x "/newroot$init" ]; then
@@ -223,7 +325,7 @@ fi
 # typed to the system's login there (2026-10-29)
 kill $timer $console 2>/dev/null
 kill -KILL "$(cat /run/console.pid 2>/dev/null)" 2>/dev/null
-killall telnetd udhcpd 2>/dev/null
+killall udhcpd 2>/dev/null
 log "stage=switch-root init=$init"
 # The kernel log of the system's first three minutes, every 2 s, into the persistent log's 508 KiB behind the stages
 # (the second 512 KiB are the system's own log: openwrt/customize.sh's mu5358-log):
@@ -237,7 +339,7 @@ cp /mu/busybox /mulog/busybox
     /mulog/busybox dmesg > /mulog/k 2>/dev/null
     /mulog/busybox tail -c 512000 /mulog/k > /mulog/t
     /mulog/busybox head -c 8192 /dev/zero >> /mulog/t
-    /mulog/busybox dd if=/mulog/t of=/dev/mmcblk0 bs=512 seek=$((LOGSEC + 8)) count=1016 conv=notrunc,fsync 2>/dev/null
+    /mulog/busybox dd if=/mulog/t of="$LOGDEV" bs=512 seek=$((LOGSEC + 8)) count=1016 conv=notrunc,fsync 2>/dev/null
     i=$((i + 1)); /mulog/busybox sleep 2
 done) &
 # /etc/mu5358/kmsg-to-acm on the system: the kernel log, live, onto the USB serial console as well, for a board that
@@ -246,5 +348,10 @@ done) &
 if [ -e /newroot/etc/mu5358/kmsg-to-acm ] && [ -c /dev/ttyGS0 ]; then
     /mulog/busybox cat < /dev/kmsg > /dev/ttyGS0 2>/dev/null &
 fi
+# what e2fsck said, for the system (/root/fsck.log), when it ran
+[ -s /run/fsck.log ] && cp /run/fsck.log /newroot/root/fsck.log
+# where the system's own log goes (openwrt/customize.sh's mu5358-log: the second half of the same MiB)
+mkdir -p /newroot/etc/mu5358
+echo "$LOGDEV $((LOGSEC + 1024))" > /newroot/etc/mu5358/persist-log
 umount /config 2>/dev/null
 exec switch_root /newroot "$init"

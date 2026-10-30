@@ -9,13 +9,14 @@
 <link rel="canonical" href="https://kaandikec.com/mu5358-linux/tr/">
 <link rel="alternate" hreflang="en" href="https://kaandikec.com/mu5358-linux/">
 <link rel="alternate" hreflang="tr" href="https://kaandikec.com/mu5358-linux/tr/">
+<link rel="alternate" hreflang="zh-Hans" href="https://kaandikec.com/mu5358-linux/zh/">
 <link rel="alternate" hreflang="x-default" href="https://kaandikec.com/mu5358-linux/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="MU5358 Linux">
 <meta property="og:title" content="MU5358 Linux: ZTE U30 Pro üzerinde OpenWrt">
 <meta property="og:description" content="ZTE U30 Pro (UMS9632) üzerinde Android'in yanında OpenWrt; yuvarlak ekranı kontrol paneli. Çalışan bir araştırma portu.">
 <meta property="og:url" content="https://kaandikec.com/mu5358-linux/tr/">
-<meta property="og:image" content="https://kaandikec.com/mu5358-linux/assets/img/ui-home.png">
+<meta property="og:image" content="https://kaandikec.com/mu5358-linux/assets/img/ui2-home-tr.png">
 <meta name="theme-color" content="#f3f6fa" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
@@ -35,8 +36,9 @@
 <a href="#screen">Ekran</a>
 <a href="#how">Nasıl açılıyor</a>
 <a href="#build">Derleme</a>
+<a href="web-installer/">Web kurucu</a>
 <a href="https://github.com/dikeckaan/mu5358-linux">GitHub</a>
-<span class="langs" role="group" aria-label="Dil"><a href="../" hreflang="en" lang="en">English</a><a href="./" hreflang="tr" lang="tr" aria-current="true">Türkçe</a></span>
+<span class="langs" role="group" aria-label="Dil"><a href="../" hreflang="en" lang="en">English</a><a href="./" hreflang="tr" lang="tr" aria-current="true">Türkçe</a><a href="../zh/" hreflang="zh-Hans" lang="zh-Hans">中文</a></span>
 </nav>
 <button class="theme-btn" type="button" hidden data-labels="Tema|Otomatik|Açık|Koyu|sistem ayarını izler|Renk temasını değiştir"><svg class="i-auto" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg><svg class="i-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><svg class="i-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="theme-name"></span></button>
 <button class="menu-btn" type="button" aria-expanded="false" aria-controls="site-nav">Menü</button>
@@ -49,8 +51,8 @@
 <div>
 <h1>U30 Pro, kendi ekranı olan bir Linux router</h1>
 <p class="lede">ZTE U30 Pro (MU5358, Unisoc UMS9632) üzerinde Android'in yanında <strong>OpenWrt</strong>. Mobil veri,
-Wi-Fi 6 hotspot, USB üzerinden SSH ve hotspot'un yuvarlak ekranında, Android launcher'ına benzeyen hafif bir kontrol
-paneli. Android yerinde kalıyor; her yeniden başlatmada cihaz kendiliğinden ona dönüyor.</p>
+Wi-Fi 6 hotspot, USB üzerinden SSH ve hotspot'un yuvarlak ekranında bir router gösterge paneli; Türkçe, İngilizce ve
+Çince. Android yerinde kalıyor; her yeniden başlatmada cihaz kendiliğinden ona dönüyor.</p>
 <div class="actions">
 <a class="btn primary" href="#status">Önce durumu oku</a>
 <a class="btn" href="https://github.com/dikeckaan/mu5358-linux">GitHub'da kaynak kod</a>
@@ -58,7 +60,7 @@ paneli. Android yerinde kalıyor; her yeniden başlatmada cihaz kendiliğinden o
 </div>
 <p class="sponsor-note"><a href="https://kaandikec.com/mu300-linux/tr/">MU300 Linux</a>'un (ZTE F50 ve U30 Air) kardeş projesi; Türkiye'de aynı tek kişinin işi.</p>
 </div>
-<img class="hero-shot" src="../assets/img/ui-home.png" width="240" height="240" alt="Linux altında U30 Pro'nun ana ekranı: ortada pil halkalı bir saat, çevresinde dört yuvarlak yaprak (WiFi, Mesaj, Pil, Ayar)">
+<img class="hero-shot" src="../assets/img/ui2-home-tr.png" width="240" height="240" alt="U30 Pro'nun yuvarlak ekranında gösterge panelinin ana sayfası: sinyal, LTE, saat ve pil içeren durum çubuğu; operatör, bant ve sinyal gücü; son bir dakikanın hız grafiği; 2,4 Mbit/s indirme ve 310 kbit/s yükleme; iki istemci ve bugünkü veri">
 </div>
 </section>
 
@@ -68,7 +70,9 @@ paneli. Android yerinde kalıyor; her yeniden başlatmada cihaz kendiliğinden o
 <h2 id="status">Durum: çalışan bir araştırma portu</h2>
 <div class="callout warn"><strong>Henüz kurulum programı ve sürüm yok.</strong> Buradaki her şey root'lu tek bir
 cihazda, repodaki betiklerle elle ayağa kaldırıldı ve test edildi. Çalışma görünsün ve başkaları takip edebilsin diye
-yayınlandı. adb, Magisk root, bölümler ve seri konsol sana yabancıysa kurulum programını bekle.</div>
+yayınlandı. adb, Magisk root, bölümler ve seri konsol sana yabancıysa kurulum programını bekle. Bir
+<a href="web-installer/">web kurucu</a> sayfası var (Chrome ya da Edge, USB üzerinden); yeni ve tarayıcı tarafı
+şimdiye kadar gerçek bir cihazda değil, yalnızca kendi demosunda çalıştırıldı.</div>
 <p>Şimdiden iyi yaptığı şeyler: 3 saatlik testte her kontrol yeşil geçti (USB, şebeke kaydı, mobil veri, ping,
 Wi-Fi). Çekirdek hatası çıkmadı, NV bölümleri bayt bayt aynı kaldı, bellek kullanımı sabit seyretti. Art arda altı
 yeniden başlatmada her şey kendiliğinden geldi.</p>
@@ -77,7 +81,7 @@ yeniden başlatmada her şey kendiliğinden geldi.</p>
 <ul class="dots">
 <li><strong>Mobil veri (LTE)</strong>Android'in kendi modem servisleri bir chroot'ta, MU300 Linux'taki gibi. Android'in 11-12 Mbit/s verdiği yerde 14-19 Mbit/s.</li>
 <li><strong>Wi-Fi 6 hotspot</strong>AIC8800D80X2, 5 GHz, HE80, WPA2; kartın kendi MAC adresi ve kalibrasyonu ile.</li>
-<li><strong>Ekran</strong>U30 launcher'ının görünümünde bir kontrol paneli: durum, katılmak için karekodlu Wi-Fi, SMS, pil, ayarlar, istemciler, sinyal, güç işlemleri, sistem ve log. 1,5 MB, yaklaşık 6 MB RAM.</li>
+<li><strong>Ekran</strong>Yuvarlak ekranda Türkçe, İngilizce ve Çince bir gösterge paneli: canlı hız grafikli ana sayfa, şebeke, karekodla katılmalı Wi-Fi, istemciler, trafik, SMS, pil, sistem, ayarlar, güç ve log. Tek bir 1,6 MB ikili, yaklaşık 6 MB RAM, ekran açıkken CPU'nun %0,5'i. Launcher görünümündeki "klasik" arayüz seçenek olarak duruyor.</li>
 <li><strong>Tuşlar</strong>Güç: kısa basış ekranı açar/kapatır, basılı tutunca kapatır. Wi-Fi tuşu basılı tutulunca hotspot'u kapatır/açar.</li>
 <li><strong>USB ağı ve SSH</strong>Bilgisayara tak: <code>ssh root@192.168.58.1</code>; ayrıca bir seri konsol.</li>
 <li><strong>GPU</strong>Android'in sürücüsüyle Mali-G57: OpenGL ES 3.2, EGL 1.5 ve Vulkan; gerektiğinde yükleniyor.</li>
@@ -86,23 +90,40 @@ yeniden başlatmada her şey kendiliğinden geldi.</p>
 </ul>
 
 <h2 id="screen">Ekran</h2>
-<p>U30 Pro'nun 240×240 yuvarlak bir ekranı ve dokunmatiği var. Linux altında bu ekranda <code>u30ui</code> çalışıyor;
-C ile yazıldı ve doğrudan çekirdeğin DRM arayüzüne çiziyor. U30'un Android launcher'ındaki yapraklar, renkler ve
-sayfalar aynı, ama Android yok. Açılışta kilitli (açmak için basılı tut), bir dakika sonra kararıyor, güç tuşuyla
-yeniden açılıyor. Aşağıdaki görüntüler örnek verilerle bilgisayarda alınmış önizlemeler.</p>
+<p>U30 Pro'nun 240×240 yuvarlak bir ekranı ve dokunmatiği var. Linux altında bu ekran bir router gösterge paneli:
+<code>u30ui2</code>, C ile yazıldı ve doğrudan çekirdeğin DRM arayüzüne çiziyor; Türkçe, İngilizce ve Basitleştirilmiş
+Çince (dil, ekrandaki bir ayar). Sayfalar için yana kaydır; aşağı kaydırmak ana sayfaya döndürür ya da açık olanı
+kapatır. Açılışta kilitli (açmak için basılı tut), iki dakika dokunulmayınca yeniden kilitleniyor; güç tuşu ekranı
+açıp kapatıyor, zaman aşımı kapatıyor.</p>
+<p>Yeni: gösterge paneli 2026-10-30'da launcher görünümlü arayüzün yerine varsayılan oldu ve şimdiye kadar tek bir
+cihazda çalıştı. Tamamı, yazı tipleri içinde, tek bir statik 1,6 MB ikili; yaklaşık 6 MB RAM ve ekran açıkken, ana
+sayfanın canlı grafiğiyle, CPU'nun %0,5'i. Ekran kapalıyken hiçbir şey çizilmiyor ve okumalar 30 saniyede bir geçişe
+iniyor. Aşağıdaki görüntüler örnek verilerle bilgisayarda alınmış önizlemeler.</p>
 <ul class="shots">
-<li><figure><img src="../assets/img/ui-home-locked.png" width="240" height="240" alt="Asma kilitli kilitli ana ekran" loading="lazy"><figcaption>Kilitli (açmak için basılı tut)</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-home-tr.png" width="240" height="240" alt="Ana sayfa: operatör, LTE bandı ve sinyal gücü, son bir dakikanın hız grafiği, indirme ve yükleme hızları, iki istemci ve bugünkü veri" loading="lazy"><figcaption>Ana sayfa</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-network-tr.png" width="240" height="240" alt="Şebeke: sinyalin son on dakikası bir çizgi olarak, operatör, bant ve EARFCN, hücre ve PCI, RSRP ve RSRQ, IP adresi, APN ve mobil veri anahtarı" loading="lazy"><figcaption>Şebeke</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-wifi-tr.png" width="240" height="240" alt="Wi-Fi: ağ adı, 5 GHz kanal 36, 80 MHz, iki istemci, gizlenmiş parola, hotspot anahtarı ve bir karekod düğmesi" loading="lazy"><figcaption>Wi-Fi</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-wifi-qr-tr.png" width="240" height="240" alt="Telefon kamerasıyla hotspot'a katılmak için tam ekran bir karekod" loading="lazy"><figcaption>Karekodla katıl</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-clients-tr.png" width="240" height="240" alt="İstemciler: bağlı her cihaz; adı ya da adresi, MAC'i, sinyali ve indirilen/yüklenen baytlar" loading="lazy"><figcaption>İstemciler</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-traffic-tr.png" width="240" height="240" alt="Trafik: son 60 saniyenin indirme ve yükleme grafiği; bugünün, bu ayın ve açılıştan beri olan veri" loading="lazy"><figcaption>Trafik</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-sms-tr.png" width="240" height="240" alt="Mesajlar: gönderen, saat ve ilk satırıyla üç SMS" loading="lazy"><figcaption>Mesajlar</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-sms-open-tr.png" width="240" height="240" alt="Tarihiyle birlikte tam açılmış bir SMS; kapatmak için aşağı kaydır" loading="lazy"><figcaption>Açılmış bir mesaj</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-battery-tr.png" width="240" height="240" alt="Pil: yüzde 87'de yeşil bir halka, pilde, akım, voltaj ve sıcaklık, kabaca kalan süre" loading="lazy"><figcaption>Pil</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-system-tr.png" width="240" height="240" alt="Sistem: her CPU çekirdeği için bir çubuk ve saat hızları, bellek, depolama, dört sıcaklık, yük ve çalışma süresi, sürümler" loading="lazy"><figcaption>Sistem</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-settings-tr.png" width="240" height="240" alt="Ayarlar: dil, ekran kapanma süresi, parlaklık, kilit ve arayüz (gösterge paneli ya da klasik)" loading="lazy"><figcaption>Ayarlar</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-power-tr.png" width="240" height="240" alt="Güç: Android'e yeniden başlat, kapat, modemi yeniden başlat, Wi-Fi'ı yeniden başlat, ekranı kapat" loading="lazy"><figcaption>Güç</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-log-tr.png" width="240" height="240" alt="Log: sistem günlüğünün son satırları" loading="lazy"><figcaption>Log</figcaption></figure></li>
+</ul>
+<h3 id="classic">Klasik arayüz</h3>
+<p>İlk arayüz <code>u30ui</code>, U30'un Android launcher'ının görünümünde (aynı yapraklar, renkler ve sayfalar, Android
+olmadan), sistemde "klasik" arayüz olarak duruyor. İkisinin de ayarlar sayfası diğerine geçiriyor.</p>
+<ul class="shots classic">
+<li><figure><img src="../assets/img/ui-home.png" width="240" height="240" alt="Klasik ana ekran: ortada pil halkalı bir saat, çevresinde dört yuvarlak yaprak (WiFi, Mesaj, Pil, Ayar)" loading="lazy"><figcaption>Ana ekran</figcaption></figure></li>
 <li><figure><img src="../assets/img/ui-status.png" width="240" height="240" alt="Durum sayfası: operatör, sinyal çubukları, indirme ve yükleme hızı, pil ve istemci sayısı" loading="lazy"><figcaption>Durum</figcaption></figure></li>
-<li><figure><img src="../assets/img/ui-wifi.png" width="240" height="240" alt="Wi-Fi sayfası: ağ adı, parola ve bağlı cihazlar" loading="lazy"><figcaption>Wi-Fi</figcaption></figure></li>
 <li><figure><img src="../assets/img/ui-wifi-qr.png" width="240" height="240" alt="Telefon kamerasıyla hotspot'a katılmak için karekod" loading="lazy"><figcaption>Karekodla katıl</figcaption></figure></li>
 <li><figure><img src="../assets/img/ui-sms.png" width="240" height="240" alt="İki SMS içeren mesajlar sayfası" loading="lazy"><figcaption>SMS</figcaption></figure></li>
 <li><figure><img src="../assets/img/ui-battery.png" width="240" height="240" alt="Pil sayfası: yüzde 87'de bir halka, akım, voltaj ve sıcaklık" loading="lazy"><figcaption>Pil</figcaption></figure></li>
-<li><figure><img src="../assets/img/ui-settings.png" width="240" height="240" alt="Ayarlar: ekran zaman aşımı, kilit, hotspot, mobil veri" loading="lazy"><figcaption>Ayarlar</figcaption></figure></li>
-<li><figure><img src="../assets/img/ui-signal.png" width="240" height="240" alt="Sinyal sayfası: RSRP, RSRQ, WAN adresi ve trafik" loading="lazy"><figcaption>Sinyal</figcaption></figure></li>
 <li><figure><img src="../assets/img/ui-actions.png" width="240" height="240" alt="Güç işlemleri: yeniden başlat, kapat, veriyi kes, ekranı kapat; her biri bir saniye basılı tutma istiyor" loading="lazy"><figcaption>Güç işlemleri</figcaption></figure></li>
-<li><figure><img src="../assets/img/ui-system.png" width="240" height="240" alt="Sistem sayfası: CPU, RAM, depolama, çalışma süresi ve SoC sıcaklığı" loading="lazy"><figcaption>Sistem</figcaption></figure></li>
-<li><figure><img src="../assets/img/ui-clients.png" width="240" height="240" alt="İstemciler sayfası: bağlı cihazlar ve adresleri" loading="lazy"><figcaption>İstemciler</figcaption></figure></li>
-<li><figure><img src="../assets/img/ui-sms-open.png" width="240" height="240" alt="Tam olarak açılmış bir SMS" loading="lazy"><figcaption>Açılmış bir mesaj</figcaption></figure></li>
 </ul>
 <p>Anlatmaya değer bir ayrıntı: panel baş aşağı takılı. Görüntüyü CPU'da çevirince satırlar panele kendi tarama
 yönünün tersinden gidiyordu ve hareket eden her kare yırtılıyordu. Artık görüntüyü panel kendisi çeviriyor (MADCTL

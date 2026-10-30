@@ -13,15 +13,23 @@
 #include "third_party/stb_truetype.h"
 #include "font_regular.h"
 #include "font_medium.h"
+/* HAVE_CJK (u30ui2): Noto Sans SC for the characters Roboto lacks, in the same two weights */
+#ifdef HAVE_CJK
+#include "font_cjk.h"
+#endif
 
 uint32_t gfx_buf[W * H];
 
-static stbtt_fontinfo fonts[2];
+static stbtt_fontinfo fonts[4];
+static int have_cjk;
 
 void gfx_init(void)
 {
 	stbtt_InitFont(&fonts[FONT_REGULAR], roboto_regular_ttf, 0);
 	stbtt_InitFont(&fonts[FONT_MEDIUM], roboto_medium_ttf, 0);
+#ifdef HAVE_CJK
+	have_cjk = stbtt_InitFont(&fonts[2], noto_sc_400, 0) && stbtt_InitFont(&fonts[3], noto_sc_500, 0);
+#endif
 }
 
 int gfx_visible(int x, int y)
@@ -256,6 +264,9 @@ static struct glyph *glyph_get(int font, float px, int cp)
 	if (g->bm && g->font == font && g->cp == cp && g->size10 == size10)
 		return g;
 	free(g->bm);
+	/* a character Roboto lacks (CJK): the fallback font, at the same weight */
+	if (have_cjk && !stbtt_FindGlyphIndex(f, cp))
+		f = &fonts[2 + font];
 	sc = stbtt_ScaleForPixelHeight(f, px);
 	g->bm = stbtt_GetCodepointBitmap(f, 0, sc, cp, &g->w, &g->h, &g->xoff, &g->yoff);
 	if (!g->bm)

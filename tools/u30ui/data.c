@@ -19,7 +19,7 @@ static pthread_cond_t poke_cond = PTHREAD_COND_INITIALIZER;
 static int poked;
 volatile int data_screen_on = 1;
 
-#define AT "/opt/mu300/bin/mu300-at"
+#define AT "/opt/mu5358/bin/mu5358-at"
 
 /* the first line of a command's output, or of a file */
 static int run(const char *cmd, char *out, int n)
@@ -204,7 +204,7 @@ static void collect_modem(struct data *d)
 /* --- every 30 s: the SIM's messages (mu300's sms list: "#IDX  from SENDER  TIME", the text indented) */
 static void collect_sms(struct data *d)
 {
-	FILE *p = popen("/opt/mu300/bin/sms list 2>/dev/null | sed 's/\\x1b\\[[0-9;]*m//g'", "r");
+	FILE *p = popen("/opt/mu5358/bin/sms list 2>/dev/null | sed 's/\\x1b\\[[0-9;]*m//g'", "r");
 	char b[512];
 	int n = 0;
 

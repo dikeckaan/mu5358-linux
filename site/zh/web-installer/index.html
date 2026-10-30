@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- This page talks to a device over USB. Its policy: scripts and styles from this site only, and no connection
+     to anything but this site and GitHub's API. (The hash is the theme script below; no web fonts on this page.) -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-soKh/tpEPakmmFYz71tBkGNCxZ3QCWXshSiSGpHasJk='; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.github.com; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<script>try{var t=localStorage.getItem("mu5358-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<title>网页安装器：在浏览器中为中兴 U30 Pro 安装 OpenWrt</title>
+<meta name="description" content="在 Chrome 或 Edge 中通过 USB 为已 root 的中兴 U30 Pro（MU5358）与 Android 并存安装 MU5358 Linux（OpenWrt），电脑上无需 adb 或脚本。">
+<link rel="canonical" href="https://kaandikec.com/mu5358-linux/zh/web-installer/">
+<link rel="alternate" hreflang="en" href="https://kaandikec.com/mu5358-linux/web-installer/">
+<link rel="alternate" hreflang="tr" href="https://kaandikec.com/mu5358-linux/tr/web-installer/">
+<link rel="alternate" hreflang="zh-Hans" href="https://kaandikec.com/mu5358-linux/zh/web-installer/">
+<link rel="alternate" hreflang="x-default" href="https://kaandikec.com/mu5358-linux/web-installer/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="MU5358 Linux">
+<meta property="og:title" content="网页安装器：在浏览器中为中兴 U30 Pro 安装 OpenWrt">
+<meta property="og:description" content="在 Chrome 或 Edge 中通过 USB 为已 root 的中兴 U30 Pro 与 Android 并存安装 MU5358 Linux（OpenWrt）。">
+<meta property="og:url" content="https://kaandikec.com/mu5358-linux/zh/web-installer/">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://kaandikec.com/mu5358-linux/assets/img/ui-home.png">
+<meta name="theme-color" content="#f3f6fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/style.css">
+<link rel="stylesheet" href="../../assets/web-installer/web-installer.css">
+<script src="../../assets/site.js" defer></script>
+<script type="module" src="../../assets/web-installer/app.js"></script>
+</head>
+<body>
+<a class="skip" href="#content">跳到正文</a>
+<header class="site-header">
+<div class="wrap">
+<a class="brand" href="../"><svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="26" fill="none" stroke="currentColor" stroke-width="4"/><circle cx="32" cy="15" r="5" fill="#2259d6"/><circle cx="49" cy="32" r="5" fill="#f2b23a"/><circle cx="32" cy="49" r="5" fill="#3fae6a"/><circle cx="15" cy="32" r="5" fill="currentColor"/><circle cx="32" cy="32" r="7" fill="none" stroke="#f2b23a" stroke-width="3.5"/></svg>MU5358 Linux</a>
+<nav class="site-nav" id="site-nav" aria-label="Main">
+<a href="../#works">能做什么</a>
+<a href="../#screen">屏幕</a>
+<a href="../#how">启动过程</a>
+<a href="../#build">自己构建</a>
+<a href="./" aria-current="page">网页安装器</a>
+<a href="https://github.com/dikeckaan/mu5358-linux">GitHub</a>
+<span class="langs" role="group" aria-label="语言"><a href="../../web-installer/" hreflang="en" lang="en">English</a><a href="../../tr/web-installer/" hreflang="tr" lang="tr">Türkçe</a><a href="./" hreflang="zh-Hans" lang="zh-Hans" aria-current="true">中文</a></span>
+</nav>
+<button class="theme-btn" type="button" hidden data-labels="主题|自动|浅色|深色|跟随系统|切换颜色主题"><svg class="i-auto" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg><svg class="i-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><svg class="i-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="theme-name"></span></button>
+<button class="menu-btn" type="button" aria-expanded="false" aria-controls="site-nav">菜单</button>
+</div>
+</header>
+<main id="content">
+
+<header class="page-head">
+<div class="prose">
+<nav class="crumbs" aria-label="Breadcrumb"><a href="../">首页</a> <span aria-hidden="true">/</span> <span aria-current="page">网页安装器</span></nav>
+<h1>网页安装器</h1>
+<p class="lede">在已 root 的中兴 U30 Pro 上与 Android 并存安装 MU5358 Linux（OpenWrt），启动它一次，再把它移除：都在本页面上，通过 USB，用 Chrome 或 Edge 完成。电脑上无需安装任何东西。</p>
+<div class="callout warn">
+<strong>新东西，尚未从浏览器中测试过</strong>
+<p>本页面的设备端（发布版本里的 <code>mu5358-install.sh</code>）已在一台 U30 Pro（MU5358，固件 B19，Magisk）上通过普通 adb 测试过。而页面本身，也就是浏览器通过 WebUSB 驱动该脚本这一部分，目前只对着它自己的<a href="?demo">演示</a>运行过，还没有对着真实设备运行过。请做好遇到问题的准备。如果出了问题，请保存日志（页面可以保存），并<a href="https://github.com/dikeckaan/mu5358-linux/issues">告诉我们</a>。</p>
+</div>
+</div>
+</header>
+
+<div class="wrap">
+<noscript><p class="wi-noscript">本页面需要 JavaScript 和支持 WebUSB 的浏览器（电脑上的 Chrome 或 Edge）。</p></noscript>
+<div class="wi" id="wi-app" hidden><p class="wi-wait">正在加载安装器…</p></div>
+</div>
+
+<div class="prose">
+
+<nav class="toc" aria-labelledby="toc-h">
+<h2 id="toc-h">本页内容</h2>
+<ol>
+<li><a href="#before">开始之前</a></li>
+<li><a href="#does">页面做什么，设备上运行什么</a></li>
+<li><a href="#where">Linux 装在哪里：userdata 之后，还是 fulldumpdb</a></li>
+<li><a href="#once">Linux 只启动一次，从不默认启动</a></li>
+<li><a href="#safety">如果标签页被关闭或数据线脱落</a></li>
+<li><a href="#cannot-open">如果浏览器无法打开设备</a></li>
+<li><a href="#privacy">页面能看到和保存什么</a></li>
+</ol>
+</nav>
+
+<h2 id="before">开始之前</h2>
+<ul>
+<li>一台<strong>已用 Magisk root</strong> 的中兴 U30 Pro（MU5358，紫光展锐 UMS9632），且 Android 从槽位 a 运行。页面不给设备 root，也不解锁 bootloader；它拒绝任何其他设备。</li>
+<li><strong>Windows、macOS 或 Linux 上的 Chrome、Edge 或其他 Chromium 浏览器。</strong>Firefox 和 Safari 没有 WebUSB。</li>
+<li>Android 中已打开 USB 调试，设备已接好，且没有其他程序占用它。正在运行的 adb 服务会占用它（用 <code>adb kill-server</code> 停止），另一个打开了本页面的标签页也会。</li>
+<li>给 shell 的 root 权限：第一次时 Magisk 会在设备上询问（“Shell”请求 root）。请允许。</li>
+<li>发布版本的文件，从<a href="https://github.com/dikeckaan/mu5358-linux/releases">项目的发布页</a>下载：<code>SHA256SUMS</code>、<code>SHA256SUMS.sig</code>、<code>mu5358-openwrt.img.gz</code>（约 53 MB）、<code>mu5358-kernel.Image.gz</code>、<code>mu5358-ramdisk.tar.gz</code>、<code>mu5358-tools.tar.gz</code>、<code>mu5358-install.sh</code> 和 <code>android-files.txt</code>。网页无法自行下载 GitHub 发布版本的文件，所以由您下载，再在页面上选择它们。</li>
+<li>如果要用 userdata 之后的空间：从 Android 的 /data 划出 Linux 的那份之后，/data 还得至少剩 4 GiB 空闲。</li>
+<li>所安装系统中 root 的密码（至少 6 个字符），在页面上输入：它成为 SSH 和网页面板的 root 密码，否则 OpenWrt 会让它们没有密码。设备只收到它的哈希。</li>
+</ul>
+
+<h2 id="does">页面做什么，设备上运行什么</h2>
+<p>页面是一个小型 adb 客户端。它通过 GitHub 的 API 读取发布版本列表，连同 GitHub 为每个文件计算的 SHA-256。当您选择下载好的文件时，它在浏览器中检查它们：<code>SHA256SUMS</code> 必须与 GitHub 的校验和一致，并且必须带有项目发布密钥的签名（<code>SHA256SUMS.sig</code>，usign 格式的 Ed25519 签名，用内置在页面里的密钥校验：源码中的 <code>installer/release.pub</code>，编号 <code>15fd2f702186c19e</code>）；其他每个文件必须与 <code>SHA256SUMS</code> 中写的校验和一致。没有项目签名的 <code>SHA256SUMS</code> 一律拒绝，无论 GitHub 怎么说。只有这之后才会有东西发往设备。</p>
+<p>在设备上，一切都由发布版本自己的脚本 <code>mu5358-install.sh</code> 完成，通过 Magisk 的 <code>su</code> 以 root 运行。页面把它和发布版本的文件放到 <code>/data/local/tmp/mu5358-web</code>；脚本把它们移进 root 自己的目录（<code>/data/adb/mu5358</code>），使用之前再全部检查一遍。然后它把安装作为一项独立的任务运行，页面则跟踪这项任务：各个步骤、日志和结果。</p>
+<ul>
+<li><strong>安装</strong>（或更新）：系统 OpenWrt，连同这台设备自己的厂商文件（模块、固件、Wi-Fi 校准、基带和 GPU 的用户空间，从它的 Android 中复制），以及槽位 b 的启动镜像。您在页面上输入的 root 密码会设置到系统中（以其哈希的形式；设备从不会看到密码本身）。</li>
+<li><strong>启动一次 Linux</strong>：Linux 启动一次；下一次重启又是 Android。</li>
+<li><strong>卸载</strong>：槽位 b 放回 Android 的启动镜像，系统被擦除，空间还给 Android，除非您选择保留。</li>
+<li><strong>备份</strong>：下载第一次安装所覆盖的内容（槽位 b 的 boot 和 init_boot，以及 misc）。</li>
+</ul>
+<p>它从不写入的东西：槽位 a、NV 分区（射频校准、IMEI：<code>nr_*nv*</code>、<code>prodnv</code>、<code>calinv</code>、<code>miscdata</code>、<code>persist</code>、<code>ztepersist</code>）、Android 的任何数据，以及除 userdata 末端之外分区表的任何条目。</p>
+
+<h2 id="where">Linux 装在哪里：userdata 之后，还是 fulldumpdb</h2>
+<div class="table-scroll"><table>
+<thead><tr><th scope="col"></th><th scope="col">userdata 之后（推荐）</th><th scope="col">fulldumpdb</th></tr></thead><tbody>
+<tr><th scope="row">Linux 的空间</th><td>4、8 或 16 GiB，由您选择（默认 4 GiB）</td><td>2 GiB</td></tr>
+<tr><th scope="row">会改变什么</th><td>Android 的 userdata 分区提前结束。它的文件系统在运行中被缩小；Android 的东西一样都不会被擦除。中途 Android 必须重启一次：页面会做这件事，重新连接后继续。</td><td>不重新分区。厂商的崩溃转储分区在正常设备上是空的，系统就装在那里。</td></tr>
+<tr><th scope="row">移除它</th><td>把空间还给 userdata（Android 下次启动时自动扩展进去），或者留着这块空区域给以后的安装。</td><td>fulldumpdb 恢复为全零，和出厂时一样。</td></tr>
+</tbody></table></div>
+
+<h2 id="once">Linux 只启动一次，从不默认启动</h2>
+<p>安装不会改变启动哪个系统：每次重启启动的仍然是 Android。只有当您按下“重启进入 Linux 一次”时，Linux 才会启动。设备随后写入它启动控制块（misc）的 32 个字节，读回核对，然后重启；槽位 b 就被尝试这一次。无论 Linux 里发生什么，下一次重启又是 Android：要离开一个起不来的 Linux，断开电源或长按电源键即可。页面本身无法管理 Linux；请通过 USB 上的 SSH 访问它。</p>
+
+<h2 id="safety">如果标签页被关闭或数据线脱落</h2>
+<p>安装是设备上的一项任务。它不需要本页面：关闭标签页、浏览器崩溃或电脑休眠，结束的只是页面对它的观察，而不是任务本身。重新连接后，页面会显示进行到哪一步，并跟踪到结束。</p>
+<div class="table-scroll"><table>
+<thead><tr><th scope="col">在这一步中断</th><th scope="col">设备的状态</th></tr></thead><tbody>
+<tr><th scope="row">发送和检查文件</th><td>分区中没有写入任何内容。它启动 Android。</td></tr>
+<tr><th scope="row">在 userdata 之后腾出空间</th><td>缩小由内核自己的 f2fs 代码完成，它会先检查空闲空间并做一次试运行；分区表在那之后才修改。如果断电发生在两者之间，Android 下次启动时会把文件系统扩回去。它启动 Android。</td></tr>
+<tr><th scope="row">复制启动链、写入系统或槽位 b 的 boot</th><td>只写入槽位 b 和 Linux 的空间，从不写槽位 a。启动控制块仍然指向 Android：它启动 Android。请再次运行安装。</td></tr>
+<tr><th scope="row">安装完成之后</th><td>Android，直到您请求启动一次 Linux。</td></tr>
+</tbody></table></div>
+<p>卸载的顺序正好相反：先是 Android 的启动控制块，再从槽位 a 把启动镜像放回槽位 b，最后擦除系统。无论在哪一步中断，设备启动的都是 Android。</p>
+
+<h2 id="cannot-open">如果浏览器无法打开设备</h2>
+<div class="qa"><p><strong>所有系统</strong></p>
+<p>正在运行的 adb 服务（Android Studio、终端里的 <code>adb</code>、scrcpy）占用了设备，或者另一个标签页打开了本页面并连接着设备。同一时间只能有一个程序与设备通信。</p>
+<div><code>adb kill-server</code>，关闭这些程序以及那个标签页，然后重新连接。如果原因在此，页面会提示“有别的程序正在使用设备”。</div></div>
+<div class="qa"><p><strong>Windows</strong></p>
+<p>浏览器只能使用装有 <strong>WinUSB</strong> 驱动的接口。U30 Pro 的 adb 接口是否会自行从 Windows 得到这个驱动尚未实测；如果那里装的是厂商自己的 adb 驱动，浏览器就会被挡住。</p>
+<div>在设备管理器中查看设备的“ADB Interface”。如果它用的是其他驱动或没有驱动，请安装 Google 的 USB 驱动（它就是 WinUSB），或用 Zadig 给该接口绑定 WinUSB。只改 adb 接口，不要改网络或调制解调器接口。</div></div>
+<div class="qa"><p><strong>Linux</strong></p>
+<p>设备节点属于 root，浏览器无权写入。</p>
+<div>为 adb 接口添加一条 udev 规则，然后重新插入设备：
+<pre><code>echo 'SUBSYSTEM=="usb", ATTR{bInterfaceClass}=="ff", ATTR{bInterfaceSubClass}=="42", MODE="0660", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/51-adb-webusb.rules
+sudo udevadm control --reload &amp;&amp; sudo udevadm trigger</code></pre>
+以 snap 或 flatpak 方式安装的浏览器可能还需要单独的 USB 权限。</div></div>
+<div class="qa"><p><strong>macOS</strong></p>
+<p>无需安装任何东西。只有其他程序占用设备时浏览器才会受阻。</p>
+<div>退出该程序。</div></div>
+
+<h2 id="privacy">页面能看到和保存什么</h2>
+<ul>
+<li>它访问 <strong>GitHub 的 API</strong> 获取发布版本列表，访问本站获取自己的文件。除此之外没有别的：没有统计分析，没有来自其他网站的字体或脚本。页面的策略（它的 CSP）不允许它连接任何其他地方。</li>
+<li>它从不向设备索取 IMEI、IMSI、ICCID 或电话号码，也从不读取 NV 分区。</li>
+<li>序列号以遮盖形式显示。日志中，无论在屏幕上还是在可保存的文件里，序列号、身份号码、电话号码、MAC 地址和密钥都会被遮盖。</li>
+<li>它在浏览器为本站提供的存储中只保存一样东西：此浏览器的 adb 密钥；您允许一次之后，设备就会记住它。</li>
+</ul>
+
+</div>
+
+</main>
+<footer class="site-footer">
+<div class="wrap">
+<div>
+<h2>项目</h2>
+<ul>
+<li><a href="https://github.com/dikeckaan/mu5358-linux">GitHub 上的源代码</a></li>
+<li><a href="https://github.com/sponsors/dikeckaan">支持本项目</a></li>
+<li><a href="https://kaandikec.com/mu300-linux/zh/">MU300 Linux（中兴 F50、U30 Air）</a></li>
+</ul>
+</div>
+<div>
+<h2>帮助</h2>
+<ul>
+<li><a href="https://github.com/dikeckaan/mu5358-linux/issues">报告问题</a></li>
+<li><a href="https://t.me/mu300project">Telegram 频道（动态）</a></li>
+</ul>
+</div>
+<div>
+<p>这是一个业余项目，风险自负，不提供任何担保。与中兴、紫光展锐或任何运营商无关，也未获其认可。脚本和文档：MIT；内核模块和补丁：GPL-2.0。</p>
+</div>
+</div>
+</footer>
+</body>
+</html>

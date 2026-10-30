@@ -408,3 +408,7 @@ details.faq > div > :last-child { margin-bottom: 0; }
 .shots img { width: 100%; max-width: 190px; aspect-ratio: 1; border-radius: 50%; background: #000; box-shadow: 0 0 0 6px #1d2633, 0 6px 18px rgba(0, 0, 0, .25); }
 .shots figcaption { margin-top: .6rem; }
 .hero-shot { justify-self: center; width: min(320px, 80vw); aspect-ratio: 1; border-radius: 50%; background: #000; box-shadow: 0 0 0 14px #1d2633, 0 0 0 16px #3a4657, 0 18px 40px rgba(0, 0, 0, .3); }
+/* The classic (launcher-look) interface, kept as an option: a smaller gallery under the dashboard's. */
+.shots.classic { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 1rem; margin-top: 1rem; }
+.shots.classic img { max-width: 130px; box-shadow: 0 0 0 4px #1d2633, 0 4px 12px rgba(0, 0, 0, .25); }
+.shots.classic figcaption { font-size: .85rem; }

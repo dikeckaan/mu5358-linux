@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 NAME=${1:?usage: mainline/trial.sh NAME [IMAGE]}
 IMG=${2:-mainline/out/Image}
 # the bench unit: its adb serial, so no other U30 Pro plugged in is ever written
-export ANDROID_SERIAL=${MU5358_SERIAL:?set MU5358_SERIAL to the bench unit's adb serial}
+export ANDROID_SERIAL=${MU5358_SERIAL:?set MU5358_SERIAL to the adb serial of the bench unit}
 W=work/mainline
 GKI=work/unit2/linux-b/boot.img GKI_SHA=9ddb7794334a5a0c
 su_do() { adb shell "su -c '$1'" </dev/null | tr -d '\r'; }
@@ -33,9 +33,11 @@ bc=$(su_do 'sync; echo 3 > /proc/sys/vm/drop_caches; dd if=/dev/block/mmcblk0p4 
 echo "$(date +%T) $NAME: boot_b $want, misc armed, rebooting"
 adb reboot
 sleep 30
-for i in $(seq 200); do
+# by the clock, not by tries: with no device adb answers at once, and 200 tries were over in 6 min (ml15, 2026-10-30)
+end=$(( $(date +%s) + 1200 ))
+while [ "$(date +%s)" -lt $end ]; do
     [ "$(adb shell getprop sys.boot_completed 2>/dev/null </dev/null | tr -d '\r')" = 1 ] && break
-    sleep 3
+    sleep 5
 done
 [ "$(adb shell getprop sys.boot_completed 2>/dev/null </dev/null | tr -d '\r')" = 1 ] || { echo "Android did not come back" >&2; exit 1; }
 sleep 5

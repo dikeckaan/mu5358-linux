@@ -9,13 +9,14 @@
 <link rel="canonical" href="https://kaandikec.com/mu5358-linux/">
 <link rel="alternate" hreflang="en" href="https://kaandikec.com/mu5358-linux/">
 <link rel="alternate" hreflang="tr" href="https://kaandikec.com/mu5358-linux/tr/">
+<link rel="alternate" hreflang="zh-Hans" href="https://kaandikec.com/mu5358-linux/zh/">
 <link rel="alternate" hreflang="x-default" href="https://kaandikec.com/mu5358-linux/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="MU5358 Linux">
 <meta property="og:title" content="MU5358 Linux: OpenWrt on the ZTE U30 Pro 5G hotspot">
 <meta property="og:description" content="OpenWrt next to Android on the ZTE U30 Pro (UMS9632), with its round screen as a control panel. A working research port.">
 <meta property="og:url" content="https://kaandikec.com/mu5358-linux/">
-<meta property="og:image" content="https://kaandikec.com/mu5358-linux/assets/img/ui-home.png">
+<meta property="og:image" content="https://kaandikec.com/mu5358-linux/assets/img/ui2-home-en.png">
 <meta name="theme-color" content="#f3f6fa" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
@@ -35,8 +36,9 @@
 <a href="#screen">The screen</a>
 <a href="#how">How it boots</a>
 <a href="#build">Build it</a>
+<a href="web-installer/">Web installer</a>
 <a href="https://github.com/dikeckaan/mu5358-linux">GitHub</a>
-<span class="langs" role="group" aria-label="Language"><a href="./" hreflang="en" lang="en" aria-current="true">English</a><a href="tr/" hreflang="tr" lang="tr">Türkçe</a></span>
+<span class="langs" role="group" aria-label="Language"><a href="./" hreflang="en" lang="en" aria-current="true">English</a><a href="tr/" hreflang="tr" lang="tr">Türkçe</a><a href="zh/" hreflang="zh-Hans" lang="zh-Hans">中文</a></span>
 </nav>
 <button class="theme-btn" type="button" hidden data-labels="Theme|Auto|Light|Dark|follows your system|Change the colour theme"><svg class="i-auto" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg><svg class="i-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><svg class="i-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="theme-name"></span></button>
 <button class="menu-btn" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
@@ -49,8 +51,8 @@
 <div>
 <h1>The U30 Pro, as a Linux router with its own screen</h1>
 <p class="lede"><strong>OpenWrt</strong> next to Android on the ZTE U30 Pro (MU5358, Unisoc UMS9632). Mobile data,
-Wi-Fi 6 hotspot, SSH over USB, and the hotspot's round screen as a light control panel that looks like its Android
-launcher. Android stays, and every reboot goes back to it by itself.</p>
+Wi-Fi 6 hotspot, SSH over USB, and the hotspot's round screen as a router's dashboard, in English, Turkish and
+Chinese. Android stays, and every reboot goes back to it by itself.</p>
 <div class="actions">
 <a class="btn primary" href="#status">Read the status first</a>
 <a class="btn" href="https://github.com/dikeckaan/mu5358-linux">Source on GitHub</a>
@@ -58,7 +60,7 @@ launcher. Android stays, and every reboot goes back to it by itself.</p>
 </div>
 <p class="sponsor-note">The sibling of <a href="https://kaandikec.com/mu300-linux/">MU300 Linux</a> (ZTE F50 and U30 Air), by the same one person in Turkey.</p>
 </div>
-<img class="hero-shot" src="assets/img/ui-home.png" width="240" height="240" alt="The home screen of the U30 Pro under Linux: a clock with a battery ring in the middle, four round petals around it (WiFi, Mesaj, Pil, Ayar)">
+<img class="hero-shot" src="assets/img/ui2-home-en.png" width="240" height="240" alt="The dashboard's home page on the U30 Pro's round screen: a status bar with signal, LTE, the time and the battery; the operator, the band and signal strength; a graph of the last minute's throughput; 2.4 Mbit/s down and 310 kbit/s up; two clients and today's data">
 </div>
 </section>
 
@@ -69,7 +71,8 @@ launcher. Android stays, and every reboot goes back to it by itself.</p>
 <div class="callout warn"><strong>No installer, no release yet.</strong> Everything here was brought up and tested
 on one rooted unit, by hand, with the scripts in the repository. It is published so that the work is visible and
 others can follow it. If you are not comfortable with adb, Magisk root, partitions and a serial console, wait for an
-installer.</div>
+installer. There is a <a href="web-installer/">web installer</a> page (Chrome or Edge, over USB); it is new, and its
+browser side has so far only been run against its own demo, not a real device.</div>
 <p>What it already does well: a 3-hour soak with every check green (USB, network registration, mobile data, ping,
 Wi-Fi), no kernel oops, the NV partitions byte-for-byte unchanged and memory flat; six reboot cycles in a row with
 everything coming up by itself.</p>
@@ -78,7 +81,7 @@ everything coming up by itself.</p>
 <ul class="dots">
 <li><strong>Mobile data (LTE)</strong>Android's own modem daemons in a chroot, as on MU300 Linux. 14-19 Mbit/s where Android did 11-12 on the same spot.</li>
 <li><strong>Wi-Fi 6 hotspot</strong>AIC8800D80X2, 5 GHz, HE80, WPA2, with the board's own MAC and calibration.</li>
-<li><strong>The screen</strong>A control panel in the look of the U30 launcher: status, Wi-Fi with a QR code to join, SMS, battery, settings, clients, signal, power actions, system and log. 1.5 MB, about 6 MB of RAM.</li>
+<li><strong>The screen</strong>A dashboard on the round screen, in English, Turkish and Chinese: home with a live throughput graph, network, Wi-Fi with a QR code to join, clients, traffic, SMS, battery, system, settings, power and log. One 1.6 MB binary, about 6 MB of RAM, 0.5 % of the CPU with the screen on. The launcher-look "classic" interface stays as an option.</li>
 <li><strong>Buttons</strong>Power: screen on/off, held: power off. Wi-Fi key held: hotspot off/on.</li>
 <li><strong>USB network and SSH</strong>Plug it into a computer: <code>ssh root@192.168.58.1</code>, plus a serial console.</li>
 <li><strong>GPU</strong>Mali-G57 with OpenGL ES 3.2, EGL 1.5 and Vulkan through Android's driver, loaded on demand.</li>
@@ -87,23 +90,39 @@ everything coming up by itself.</p>
 </ul>
 
 <h2 id="screen">The screen</h2>
-<p>The U30 Pro has a round 240×240 screen and a touch panel. Under Linux it runs <code>u30ui</code>, written in C
-straight onto the kernel's DRM: the same petals, colours and pages as the U30's Android launcher, without Android.
-Locked at start (hold to open), off after a minute, on again with the power key. The pictures below are its host
-preview with sample data.</p>
+<p>The U30 Pro has a round 240×240 screen and a touch panel. Under Linux it is a router's dashboard: <code>u30ui2</code>,
+written in C straight onto the kernel's DRM, in English, Turkish and Simplified Chinese (the language is a setting on
+the screen). Swipe sideways for the pages, down to go home or to close what is open. Locked at start (hold to unlock),
+it locks again after two minutes without a touch; the power key switches the screen, and the timeout switches it off.</p>
+<p>It is new: the dashboard replaced the launcher-look interface as the default on 2026-10-30, and so far it has run on
+one unit. The whole thing is one static 1.6 MB binary with the fonts inside, about 6 MB of RAM and 0.5 % of the CPU
+with the screen on and the home page's live graph; while the screen is off nothing is drawn and the readings slow to
+one pass in 30 seconds. The pictures below are its host preview with sample data.</p>
 <ul class="shots">
-<li><figure><img src="assets/img/ui-home-locked.png" width="240" height="240" alt="The locked home screen with a padlock" loading="lazy"><figcaption>Locked (hold to open)</figcaption></figure></li>
+<li><figure><img src="assets/img/ui2-home-en.png" width="240" height="240" alt="Home: operator, LTE band and signal strength, a graph of the last minute's throughput, the download and upload rates, two clients and today's data" loading="lazy"><figcaption>Home</figcaption></figure></li>
+<li><figure><img src="assets/img/ui2-network-en.png" width="240" height="240" alt="Network: the signal's last ten minutes as a line, operator, band and EARFCN, cell and PCI, RSRP and RSRQ, IP address, APN, and the mobile data switch" loading="lazy"><figcaption>Network</figcaption></figure></li>
+<li><figure><img src="assets/img/ui2-wifi-en.png" width="240" height="240" alt="Wi-Fi: the network name, 5 GHz channel 36 at 80 MHz, two clients, the hidden password, the hotspot switch and a QR button" loading="lazy"><figcaption>Wi-Fi</figcaption></figure></li>
+<li><figure><img src="assets/img/ui2-wifi-qr-en.png" width="240" height="240" alt="A full-screen QR code to join the hotspot with a phone camera" loading="lazy"><figcaption>Join by QR code</figcaption></figure></li>
+<li><figure><img src="assets/img/ui2-clients-en.png" width="240" height="240" alt="Clients: each connected device with its name or address, MAC, signal and bytes down and up" loading="lazy"><figcaption>Clients</figcaption></figure></li>
+<li><figure><img src="assets/img/ui2-traffic-en.png" width="240" height="240" alt="Traffic: a download and upload graph of the last 60 seconds, and the data of today, this month and since boot" loading="lazy"><figcaption>Traffic</figcaption></figure></li>
+<li><figure><img src="assets/img/ui2-sms-en.png" width="240" height="240" alt="Messages: three SMS with sender, time and the first line" loading="lazy"><figcaption>Messages</figcaption></figure></li>
+<li><figure><img src="assets/img/ui2-sms-open-en.png" width="240" height="240" alt="One SMS opened in full, with its date; swipe down to close" loading="lazy"><figcaption>A message, opened</figcaption></figure></li>
+<li><figure><img src="assets/img/ui2-battery-en.png" width="240" height="240" alt="Battery: a green ring at 87 percent, on battery, current, voltage and temperature, and a rough time left" loading="lazy"><figcaption>Battery</figcaption></figure></li>
+<li><figure><img src="assets/img/ui2-system-en.png" width="240" height="240" alt="System: a bar per CPU core with the clocks, memory, storage, four temperatures, load and uptime, and the versions" loading="lazy"><figcaption>System</figcaption></figure></li>
+<li><figure><img src="assets/img/ui2-settings-en.png" width="240" height="240" alt="Settings: language, screen off time, brightness, lock, and the interface (dashboard or classic)" loading="lazy"><figcaption>Settings</figcaption></figure></li>
+<li><figure><img src="assets/img/ui2-power-en.png" width="240" height="240" alt="Power: restart to Android, power off, restart the modem, restart Wi-Fi, screen off" loading="lazy"><figcaption>Power</figcaption></figure></li>
+<li><figure><img src="assets/img/ui2-log-en.png" width="240" height="240" alt="Log: the last lines of the system log" loading="lazy"><figcaption>Log</figcaption></figure></li>
+</ul>
+<h3 id="classic">The classic interface</h3>
+<p>The first interface, <code>u30ui</code>, in the look of the U30's Android launcher (the same petals, colours and pages,
+without Android), stays in the system as the "classic" interface. Either one's settings page switches to the other.</p>
+<ul class="shots classic">
+<li><figure><img src="assets/img/ui-home.png" width="240" height="240" alt="The classic home screen: a clock with a battery ring in the middle, four round petals around it (WiFi, Mesaj, Pil, Ayar)" loading="lazy"><figcaption>Home</figcaption></figure></li>
 <li><figure><img src="assets/img/ui-status.png" width="240" height="240" alt="Status page: operator, signal bars, download and upload rate, battery and number of clients" loading="lazy"><figcaption>Status</figcaption></figure></li>
-<li><figure><img src="assets/img/ui-wifi.png" width="240" height="240" alt="Wi-Fi page: network name, password and connected devices" loading="lazy"><figcaption>Wi-Fi</figcaption></figure></li>
 <li><figure><img src="assets/img/ui-wifi-qr.png" width="240" height="240" alt="A QR code to join the hotspot with a phone camera" loading="lazy"><figcaption>Join by QR code</figcaption></figure></li>
 <li><figure><img src="assets/img/ui-sms.png" width="240" height="240" alt="Messages page with two SMS" loading="lazy"><figcaption>SMS</figcaption></figure></li>
 <li><figure><img src="assets/img/ui-battery.png" width="240" height="240" alt="Battery page: a ring at 87 percent, current, voltage and temperature" loading="lazy"><figcaption>Battery</figcaption></figure></li>
-<li><figure><img src="assets/img/ui-settings.png" width="240" height="240" alt="Settings: screen timeout, lock, hotspot, mobile data" loading="lazy"><figcaption>Settings</figcaption></figure></li>
-<li><figure><img src="assets/img/ui-signal.png" width="240" height="240" alt="Signal page: RSRP, RSRQ, WAN address and traffic" loading="lazy"><figcaption>Signal</figcaption></figure></li>
 <li><figure><img src="assets/img/ui-actions.png" width="240" height="240" alt="Power actions: restart, power off, cut data, screen off, each needs a one-second hold" loading="lazy"><figcaption>Power actions</figcaption></figure></li>
-<li><figure><img src="assets/img/ui-system.png" width="240" height="240" alt="System page: CPU, RAM, storage, uptime and SoC temperature" loading="lazy"><figcaption>System</figcaption></figure></li>
-<li><figure><img src="assets/img/ui-clients.png" width="240" height="240" alt="Clients page: connected devices with their addresses" loading="lazy"><figcaption>Clients</figcaption></figure></li>
-<li><figure><img src="assets/img/ui-sms-open.png" width="240" height="240" alt="One SMS opened in full" loading="lazy"><figcaption>A message, opened</figcaption></figure></li>
 </ul>
 <p>One detail worth telling: the panel is mounted upside down, and turning the picture on the CPU made every moving
 frame tear, because the rows then reached the panel against its own scan direction. Now the panel turns the picture

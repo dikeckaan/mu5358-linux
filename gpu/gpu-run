@@ -5,7 +5,7 @@
 # nodes go into the chroot's /dev, which modem-start made before the GPU was there.
 A=/opt/mu5358/android
 D=$A/dev
-grep -q "^mali_kbase " /proc/modules || /opt/mu300/bin/busybox insmod /lib/mu5358/modules/mali_kbase.ko || exit 1
+grep -q "^mali_kbase " /proc/modules || /opt/mu5358/bin/busybox insmod /lib/mu5358/modules/mali_kbase.ko || exit 1
 for i in $(seq 1 20); do [ -e /dev/mali0 ] && break; sleep 0.5 2>/dev/null || sleep 1; done
 [ -e /dev/mali0 ] || { echo "gpu-run: no /dev/mali0" >&2; exit 1; }
 [ -e $D/mali0 ] || cp -a /dev/mali0 $D/

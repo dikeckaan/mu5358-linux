@@ -1,14 +1,14 @@
 #!/bin/sh /etc/rc.common
 # U30 Pro: mu300's mobile data watchdog (mobile-data watch: the context and the address checked every 30 s, a redial
-# after two failures). mu300 starts it from mu300-post, which also makes the running slot the default boot
-# (mu300-next-boot --rearm): never here, Linux stays a one-shot trial.
+# after two failures). mu300 starts it from mu5358-post, which also makes the running slot the default boot
+# (mu5358-next-boot --rearm): never here, Linux stays a one-shot trial.
 START=99
 USE_PROCD=1
 
 start_service() {
 	procd_open_instance cellwatch
-	procd_set_param command /opt/mu300/bin/mobile-data watch
-	procd_set_param env MU300_NETIFD=1 PATH="$PATH:/opt/mu300/busybox-bin"
+	procd_set_param command /opt/mu5358/bin/mobile-data watch
+	procd_set_param env MU5358_NETIFD=1 PATH="$PATH:/opt/mu5358/busybox-bin"
 	procd_set_param respawn 3600 30 0
 	procd_set_param stdout 1
 	procd_set_param stderr 1

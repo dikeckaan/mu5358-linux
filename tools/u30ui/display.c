@@ -30,8 +30,8 @@ static int back, flip_pending;
  * and the SPI writes the rows in the direction the panel scans them. Turned by the CPU instead, the rows went in
  * the other direction and every frame tore where the two met (2026-10-30). U30UI_PANEL_ROT=0, or no panelcmd: the
  * CPU turns it. The driver's ESD recovery initialises the panel again (MADCTL 0): esd_num says when. */
-#define PANELCMD "/opt/mu300/bin/busybox insmod /lib/mu5358/modules/panelcmd.ko cmd=0x36 data=0xc0 2>/dev/null && " \
-	"/opt/mu300/bin/busybox rmmod panelcmd"
+#define PANELCMD "/opt/mu5358/bin/busybox insmod /lib/mu5358/modules/panelcmd.ko cmd=0x36 data=0xc0 2>/dev/null && " \
+	"/opt/mu5358/bin/busybox rmmod panelcmd"
 #define ESD "/sys/lcd_sys/esd_num"
 static int panel_rot, esd_num;
 static long esd_checked;

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- This page talks to a device over USB. Its policy: scripts and styles from this site only, and no connection
+     to anything but this site and GitHub's API. (The hash is the theme script below; no web fonts on this page.) -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-soKh/tpEPakmmFYz71tBkGNCxZ3QCWXshSiSGpHasJk='; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.github.com; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<script>try{var t=localStorage.getItem("mu5358-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<title>Web installer: OpenWrt on the ZTE U30 Pro from the browser</title>
+<meta name="description" content="Install MU5358 Linux (OpenWrt) next to Android on a rooted ZTE U30 Pro (MU5358) from Chrome or Edge over USB, with no adb or script on the computer.">
+<link rel="canonical" href="https://kaandikec.com/mu5358-linux/web-installer/">
+<link rel="alternate" hreflang="en" href="https://kaandikec.com/mu5358-linux/web-installer/">
+<link rel="alternate" hreflang="tr" href="https://kaandikec.com/mu5358-linux/tr/web-installer/">
+<link rel="alternate" hreflang="zh-Hans" href="https://kaandikec.com/mu5358-linux/zh/web-installer/">
+<link rel="alternate" hreflang="x-default" href="https://kaandikec.com/mu5358-linux/web-installer/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="MU5358 Linux">
+<meta property="og:title" content="Web installer: OpenWrt on the ZTE U30 Pro from the browser">
+<meta property="og:description" content="Install MU5358 Linux (OpenWrt) next to Android on a rooted ZTE U30 Pro from Chrome or Edge over USB.">
+<meta property="og:url" content="https://kaandikec.com/mu5358-linux/web-installer/">
+<meta property="og:image" content="https://kaandikec.com/mu5358-linux/assets/img/ui-home.png">
+<meta name="theme-color" content="#f3f6fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/web-installer/web-installer.css">
+<script src="../assets/site.js" defer></script>
+<script type="module" src="../assets/web-installer/app.js"></script>
+</head>
+<body>
+<a class="skip" href="#content">Skip to the content</a>
+<header class="site-header">
+<div class="wrap">
+<a class="brand" href="../"><svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="26" fill="none" stroke="currentColor" stroke-width="4"/><circle cx="32" cy="15" r="5" fill="#2259d6"/><circle cx="49" cy="32" r="5" fill="#f2b23a"/><circle cx="32" cy="49" r="5" fill="#3fae6a"/><circle cx="15" cy="32" r="5" fill="currentColor"/><circle cx="32" cy="32" r="7" fill="none" stroke="#f2b23a" stroke-width="3.5"/></svg>MU5358 Linux</a>
+<nav class="site-nav" id="site-nav" aria-label="Main">
+<a href="../#works">What works</a>
+<a href="../#screen">The screen</a>
+<a href="../#how">How it boots</a>
+<a href="../#build">Build it</a>
+<a href="./" aria-current="page">Web installer</a>
+<a href="https://github.com/dikeckaan/mu5358-linux">GitHub</a>
+<span class="langs" role="group" aria-label="Language"><a href="./" hreflang="en" lang="en" aria-current="true">English</a><a href="../tr/web-installer/" hreflang="tr" lang="tr">Türkçe</a><a href="../zh/web-installer/" hreflang="zh-Hans" lang="zh-Hans">中文</a></span>
+</nav>
+<button class="theme-btn" type="button" hidden data-labels="Theme|Auto|Light|Dark|follows your system|Change the colour theme"><svg class="i-auto" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg><svg class="i-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><svg class="i-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="theme-name"></span></button>
+<button class="menu-btn" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
+</div>
+</header>
+<main id="content">
+
+<header class="page-head">
+<div class="prose">
+<nav class="crumbs" aria-label="Breadcrumb"><a href="../">Home</a> <span aria-hidden="true">/</span> <span aria-current="page">Web installer</span></nav>
+<h1>Web installer</h1>
+<p class="lede">Install MU5358 Linux (OpenWrt) next to Android on a rooted ZTE U30 Pro, start it once, and remove it again: from this page, over USB, in Chrome or Edge. Nothing to install on the computer.</p>
+<div class="callout warn">
+<strong>New, and not yet tested from the browser</strong>
+<p>The device side of this page (the release's <code>mu5358-install.sh</code>) has been tested over plain adb on one U30 Pro (MU5358, firmware B19, Magisk). This page itself, the browser driving that script over WebUSB, has so far only been run against its own <a href="?demo">demo</a>, not against a real device. Expect rough edges. If something goes wrong, save the log (the page can) and <a href="https://github.com/dikeckaan/mu5358-linux/issues">tell us</a>.</p>
+</div>
+</div>
+</header>
+
+<div class="wrap">
+<noscript><p class="wi-noscript">This page needs JavaScript and a browser with WebUSB (Chrome or Edge on a computer).</p></noscript>
+<div class="wi" id="wi-app" hidden><p class="wi-wait">Loading the installer…</p></div>
+</div>
+
+<div class="prose">
+
+<nav class="toc" aria-labelledby="toc-h">
+<h2 id="toc-h">On this page</h2>
+<ol>
+<li><a href="#before">Before you start</a></li>
+<li><a href="#does">What the page does, and what runs on the device</a></li>
+<li><a href="#where">Where Linux goes: behind userdata, or fulldumpdb</a></li>
+<li><a href="#once">Linux starts once, never by default</a></li>
+<li><a href="#safety">If the tab closes or the cable comes out</a></li>
+<li><a href="#cannot-open">If the browser cannot open the device</a></li>
+<li><a href="#privacy">What the page sees and keeps</a></li>
+</ol>
+</nav>
+
+<h2 id="before">Before you start</h2>
+<ul>
+<li>A ZTE U30 Pro (MU5358, Unisoc UMS9632) <strong>already rooted with Magisk</strong>, with Android running from slot a. The page does not root a device and does not unlock a bootloader; it refuses any other device.</li>
+<li><strong>Chrome, Edge or another Chromium browser on Windows, macOS or Linux.</strong> Firefox and Safari have no WebUSB.</li>
+<li>USB debugging on in Android, the device plugged in, and no other program holding it. A running adb server holds it (stop it with <code>adb kill-server</code>), and so does another tab with this page.</li>
+<li>Root for the shell: Magisk asks on the device the first time (“Shell” wants root). Allow it.</li>
+<li>The release's files, downloaded from <a href="https://github.com/dikeckaan/mu5358-linux/releases">the project's releases</a>: <code>SHA256SUMS</code>, <code>SHA256SUMS.sig</code>, <code>mu5358-openwrt.img.gz</code> (about 53 MB), <code>mu5358-kernel.Image.gz</code>, <code>mu5358-ramdisk.tar.gz</code>, <code>mu5358-tools.tar.gz</code>, <code>mu5358-install.sh</code> and <code>android-files.txt</code>. A web page cannot download a GitHub release's files itself, so you download them and pick them on the page.</li>
+<li>For the room behind userdata: at least 4 GiB free on Android's /data after Linux's share is taken from it.</li>
+<li>A password for root on the installed system (at least 6 characters), typed on the page: it becomes root's password for SSH and the web panel, which OpenWrt otherwise leaves without one. Only its hash reaches the device.</li>
+</ul>
+
+<h2 id="does">What the page does, and what runs on the device</h2>
+<p>The page is a small adb client. It reads the list of releases from GitHub's API, with the SHA-256 GitHub computed for every file. When you pick the downloaded files it checks them in the browser: <code>SHA256SUMS</code> must have GitHub's checksum and must be signed by the project's release key (<code>SHA256SUMS.sig</code>, an Ed25519 signature in usign's format, checked against the key built into the page: <code>installer/release.pub</code> in the source, number <code>15fd2f702186c19e</code>), and every other file must have the checksum <code>SHA256SUMS</code> names. A <code>SHA256SUMS</code> without the project's signature is refused, whatever GitHub says about it. Only then does anything go to the device.</p>
+<p>On the device, everything is done by the release's own script, <code>mu5358-install.sh</code>, run as root through Magisk's <code>su</code>. The page puts it and the release's files in <code>/data/local/tmp/mu5358-web</code>; the script moves them into root's own directory (<code>/data/adb/mu5358</code>) and checks them all again before it uses them. It then runs the installation as a job of its own, which the page follows: the steps, the log, the result.</p>
+<ul>
+<li><strong>Install</strong> (or update): the system, OpenWrt, with this device's own vendor files (modules, firmware, Wi-Fi calibration, modem and GPU userspace, copied from its Android), and slot b's boot images. The root password you type on the page is set on the system (as its hash; the device never sees the password).</li>
+<li><strong>Start Linux once</strong>: one boot of Linux; the next restart is Android again.</li>
+<li><strong>Uninstall</strong>: slot b back to Android's boot images, the system erased, the room given back to Android unless you keep it.</li>
+<li><strong>Backup</strong>: download what the first installation wrote over (slot b's boot and init_boot, and misc).</li>
+</ul>
+<p>What it never writes: slot a, the NV partitions (radio calibration, the IMEI: <code>nr_*nv*</code>, <code>prodnv</code>, <code>calinv</code>, <code>miscdata</code>, <code>persist</code>, <code>ztepersist</code>), any of Android's data, and no entry of the partition table but the end of userdata.</p>
+
+<h2 id="where">Where Linux goes: behind userdata, or fulldumpdb</h2>
+<div class="table-scroll"><table>
+<thead><tr><th scope="col"></th><th scope="col">Behind userdata (recommended)</th><th scope="col">fulldumpdb</th></tr></thead><tbody>
+<tr><th scope="row">Room for Linux</th><td>4, 8 or 16 GiB, your choice (4 GiB by default)</td><td>2 GiB</td></tr>
+<tr><th scope="row">What changes</th><td>Android's userdata partition ends earlier. Its filesystem is shrunk while it runs; nothing of Android's is erased. Android must restart once in the middle: the page does it, connects again and goes on.</td><td>Nothing is repartitioned. The vendor's crash dump partition, empty on a normal device, gets the system.</td></tr>
+<tr><th scope="row">Removing it</th><td>Gives the room back to userdata (Android grows into it at its next start), or keeps it empty for a later installation.</td><td>fulldumpdb back to zeros, as it came.</td></tr>
+</tbody></table></div>
+
+<h2 id="once">Linux starts once, never by default</h2>
+<p>An installation does not change which system starts: Android still starts at every restart. Linux starts only when you press “Restart into Linux once”. The device then writes 32 bytes of its boot control (misc), reads them back, and restarts; slot b is tried that one time. Whatever happens in Linux, the next restart is Android again: to leave a Linux that does not come up, pull the power or hold the power button. The page cannot manage Linux itself; reach it over SSH on USB.</p>
+
+<h2 id="safety">If the tab closes or the cable comes out</h2>
+<p>The installation is a job on the device. It does not need this page: closing the tab, a browser crash or a sleeping computer end the page's view of it, not the job. Connect again and the page shows where it is and follows it to the end.</p>
+<div class="table-scroll"><table>
+<thead><tr><th scope="col">Stopped while</th><th scope="col">The device then</th></tr></thead><tbody>
+<tr><th scope="row">sending and checking the files</th><td>Nothing has been written to its partitions. It starts Android.</td></tr>
+<tr><th scope="row">making the room behind userdata</th><td>The shrink is done by the kernel's own f2fs code, which checks the free space and does a dry run first; the partition table is changed after it. If the power goes between the two, Android grows its filesystem back at its next start. It starts Android.</td></tr>
+<tr><th scope="row">copying the boot chain, writing the system or slot b's boot</th><td>Only slot b and Linux's room are written, never slot a. Boot control still says Android: it starts Android. Run the installation again.</td></tr>
+<tr><th scope="row">after the installation</th><td>Android, until you ask for Linux, once.</td></tr>
+</tbody></table></div>
+<p>Uninstalling goes the other way round: Android's boot control first, then slot b's boot images back from slot a, then the system erased. Whatever stops it, the device starts Android.</p>
+
+<h2 id="cannot-open">If the browser cannot open the device</h2>
+<div class="qa"><p><strong>Everywhere</strong></p>
+<p>A running adb server (Android Studio, <code>adb</code> on a terminal, scrcpy) has claimed the device, or another tab has this page open and connected. Only one program at a time can talk to it.</p>
+<div><code>adb kill-server</code>, close those programs and that other tab, connect again. The page says “another program is using the device” when this is the reason.</div></div>
+<div class="qa"><p><strong>Windows</strong></p>
+<p>The browser can only use an interface that has the <strong>WinUSB</strong> driver. Whether the U30 Pro's adb interface gets it from Windows by itself has not been measured; a maker's own adb driver in its place blocks the browser.</p>
+<div>In Device Manager, look at the device's “ADB Interface”. If it has another driver or none, install Google's USB driver (it is WinUSB) or bind WinUSB to that interface with Zadig. Change only the adb interface, not the network or modem ones.</div></div>
+<div class="qa"><p><strong>Linux</strong></p>
+<p>The device node belongs to root, so the browser may not write to it.</p>
+<div>Add a udev rule for adb interfaces, then plug the device in again:
+<pre><code>echo 'SUBSYSTEM=="usb", ATTR{bInterfaceClass}=="ff", ATTR{bInterfaceSubClass}=="42", MODE="0660", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/51-adb-webusb.rules
+sudo udevadm control --reload &amp;&amp; sudo udevadm trigger</code></pre>
+A browser installed as a snap or flatpak may need its own permission for USB.</div></div>
+<div class="qa"><p><strong>macOS</strong></p>
+<p>Nothing to install. Only another program holding the device stops the browser.</p>
+<div>Quit that program.</div></div>
+
+<h2 id="privacy">What the page sees and keeps</h2>
+<ul>
+<li>It contacts <strong>GitHub's API</strong> for the list of releases, and this site for its own files. Nothing else: no analytics, no fonts or scripts from other sites. The page's policy (its CSP) does not let it connect anywhere else.</li>
+<li>It never asks the device for its IMEI, IMSI, ICCID or phone number, and never reads the NV partitions.</li>
+<li>The serial number is shown masked. The log, on screen and in the file you can save, has serial numbers, identity numbers, phone numbers, MAC addresses and keys masked.</li>
+<li>It keeps one thing in the browser's storage for this site: this browser's adb key, which the device remembers once you have allowed it.</li>
+</ul>
+
+</div>
+
+</main>
+<footer class="site-footer">
+<div class="wrap">
+<div>
+<h2>The project</h2>
+<ul>
+<li><a href="https://github.com/dikeckaan/mu5358-linux">Source code on GitHub</a></li>
+<li><a href="https://github.com/sponsors/dikeckaan">Support the project</a></li>
+<li><a href="https://kaandikec.com/mu300-linux/">MU300 Linux (ZTE F50, U30 Air)</a></li>
+</ul>
+</div>
+<div>
+<h2>Help</h2>
+<ul>
+<li><a href="https://github.com/dikeckaan/mu5358-linux/issues">Report a problem</a></li>
+<li><a href="https://t.me/mu300project">Telegram channel (news)</a></li>
+</ul>
+</div>
+<div>
+<p>A hobby project, at your own risk, with no warranty. Not endorsed by ZTE, Unisoc or any operator. Scripts and documentation: MIT; kernel modules and patches: GPL-2.0.</p>
+</div>
+</div>
+</footer>
+</body>
+</html>

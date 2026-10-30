@@ -54,6 +54,18 @@ $B mkdir -p /config /run /dev/pts
 $B mount -t configfs configfs /config 2>/dev/null
 $B mount -t devpts devpts /dev/pts 2>/dev/null
 log "udc: $($B ls /sys/class/udc 2>&1 | $B tr '\n' ' ')"
+# The PHY's 3.3 V (vdd-supply = vddusb33, LDO_VDDUSB33 of the UMP9650: power-down bit 0 of PMIC 0x2108, voltage
+# 0x210c = (uV - 1200000) / 10000, from the vendor ump9650-regulator.ko's descriptor; on and at 3.3 V under the vendor
+# kernel, 2026-10-30). Mainline has no UMP9650 regulator driver: read through the ADI (RD_CMD 0x28, RD_DATA 0x2c of
+# 0x64600000), written through its slave window (0x64620000 + register), as spi-sprd-adi does (ml15).
+adi_rd() { $B devmem 0x64600028 32 $1; $B devmem 0x6460002c 32; }
+adi_wr() { $B devmem $((0x64620000 + $1)) 32 $2; }
+pd=$(adi_rd 0x2108) vol=$(adi_rd 0x210c)
+log "vddusb33 before: pd-reg $pd vol-reg $vol"
+adi_wr 0x210c 0xd2
+adi_wr 0x2108 $(( pd & 0xfffe ))
+$B sleep 0.2
+log "vddusb33 after: pd-reg $(adi_rd 0x2108) vol-reg $(adi_rd 0x210c)"
 g=/config/usb_gadget/linux
 if [ -d /config/usb_gadget ]; then
     $B mkdir -p $g/strings/0x409 $g/configs/c.1/strings/0x409 $g/functions/ncm.usb0 $g/functions/acm.GS0
@@ -70,6 +82,13 @@ if [ -d /config/usb_gadget ]; then
     $B ln -s $g/functions/acm.GS0 $g/configs/c.1/f2
     udc=
     for i in $($B seq 1 50); do udc=$($B ls /sys/class/udc 2>/dev/null | $B head -1); [ -n "$udc" ] && break; $B sleep 0.2; done
+    # The controller's own DMA engine shares the endpoint FIFOs: the vendor core pauses it (MUSB_DMA_PAUSE, 0x1000;
+    # bit 16 acknowledges) around every CPU access of a FIFO. This kernel is PIO only: paused for good (ml16; in ml15
+    # every bulk OUT packet read as zeros while ep0 worked)
+    log "dma pause before: $($B devmem 0x64a01000 32)"
+    $B devmem 0x64a01000 32 1
+    $B sleep 0.1
+    log "dma pause after: $($B devmem 0x64a01000 32)"
     if [ -n "$udc" ] && echo $udc > $g/UDC; then log "usb bound to $udc"; else log "usb: no udc"; fi
     # what still waits for what (ml12): the driver core's list, and who the PHY and the glue drivers have bound
     log "deferred: $($B cat /sys/kernel/debug/devices_deferred 2>&1 | $B tr '\t\n' ' |')"
@@ -83,12 +102,15 @@ if [ -d /config/usb_gadget ]; then
     printf 'start 192.168.58.10\nend 192.168.58.50\ninterface %s\nmax_leases 8\nlease_file /run/udhcpd.leases\noption subnet 255.255.255.0\noption lease 600\n' $ifc > /run/udhcpd.conf
     : > /run/udhcpd.leases
     $B udhcpd /run/udhcpd.conf && log "udhcpd up"
-    $B telnetd -l /mlbin/sh && log "telnetd up"
     $B ln -sf busybox /mlbin/sh
     $B mdev -s 2>/dev/null
     ( while :; do [ -c /dev/ttyGS0 ] && $B setsid /mlbin/sh -c 'exec /mlbin/sh </dev/ttyGS0 >/dev/ttyGS0 2>&1'; $B sleep 2; done ) &
     # what the controller did, every 10 s
-    ( while :; do $B sleep 10; log "usb state: $($B cat /sys/class/udc/*/state 2>/dev/null) $($B cat /sys/class/net/$ifc/operstate 2>/dev/null) rx $($B cat /sys/class/net/$ifc/statistics/rx_packets 2>/dev/null)"; done ) &
+    # and the controller's own view (ml14): MUSB POWER (0x01: SOFTCONN 0x40, HSENAB 0x20) and DEVCTL (0x60: SESSION
+    # 0x01, VBUS 0x18, B-device 0x80), the PHY's power word AON 0x350. The vendor kernel with a host attached, read by
+    # tools/regpeek on 2026-10-30: POWER 0xf1, DEVCTL 0x99, FADDR 0x03, AON 0x350 0x20.
+    regs() { echo "power $($B devmem 0x64a00001 8 2>&1) devctl $($B devmem 0x64a00060 8 2>&1) faddr $($B devmem 0x64a00000 8 2>&1) aon350 $($B devmem 0x64900350 32 2>&1)"; }
+    ( while :; do $B sleep 10; log "usb state: $($B cat /sys/class/udc/*/state 2>/dev/null) $($B cat /sys/class/net/$ifc/operstate 2>/dev/null) rx $($B cat /sys/class/net/$ifc/statistics/rx_packets 2>/dev/null); $(regs)"; done ) &
 fi
 log "done"
 while :; do $B sleep 3600; done

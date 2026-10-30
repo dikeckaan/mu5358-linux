@@ -78,3 +78,19 @@ boot mode (`check_reboot_mode:get raw rst_mode is 5040`: 0x40 normal, 0x30 fastb
    mode does not need it, the PHY forces VBUS valid). ml13: PHY registered, musb-hdrc.0.auto bound, gadget bound -
    but "not attached" for the whole run, no device on the Mac. The PHY's init dump still shows AON 0x190 and 0x350
    at 0: next, whether init's power writes land, and the musb session (DEVCTL).
+   **ml14 (patches/0012, 2026-10-30):** the vendor kernel's PHY and controller, read with tools/regpeek (a module
+   that reads only the addresses it is given; GKI has no /dev/mem): every PHY register as ml13's init dump except
+   AON 0x350, 0x20 there. With bit 5 set (0012) and CONFIG_DEVMEM, mlinit's dump: DEVCTL 0x99 (session, VBUS
+   valid, B-device: the vendor's value), POWER 0xE0 (SOFTCONN), but FADDR 0: no host saw the device.
+   **ml15: the host enumerates the board.** The PHY's vdd-supply, LDO_VDDUSB33 of the UMP9650, was off under mainline
+   (power-down bit 0 of PMIC 0x2108 set; on at 3.3 V under the vendor kernel). Its registers come from the vendor
+   ump9650-regulator.ko's regulator_desc (enable 0x2108 bit 0 inverted, vsel 0x210c, 1.2 V + 10 mV steps); mlinit
+   switches it on through the ADI (read: RD_CMD 0x28 / RD_DATA 0x2c of 0x64600000; write: 0x64620000 + register).
+   Then: state configured, FADDR 0x03, POWER 0xF0 (high speed) - the vendor's values. Bulk OUT data read as zeros
+   ("Wrong NTH SIGN", an NCM header of zeros) while ep0 works: ml16 pauses the controller's DMA engine
+   (MUSB_DMA_PAUSE 0x1000, which the vendor core sets around every CPU access of a FIFO).
+   **ml16:** DMA paused (MUSB_DMA_PAUSE read back 0x10001, acknowledged): bulk OUT still zeros. The vendor gadget
+   never runs PIO on an endpoint other than ep0 (musb_ep_restart: every request goes to the Sprd linked-list DMA,
+   drivers/usb/musb/sprd_musbhsdma.c of the vendor tree, GPL-2.0, ~1100 lines). Next: port that DMA controller to
+   mainline's musb dma_controller API (MUSB_DMA_SPRD), and the LDO_VDDUSB33 switch-on from mlinit into the PHY
+   driver (through the ADI regmap).

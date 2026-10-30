@@ -609,8 +609,8 @@ static void draw_log(void)
 }
 
 /* settings: rows of label and value; a tap changes the value */
-static const char *settings_labels[] = {"Ekran", "Kilit", "Hotspot", "Mobil veri"};
-#define NSET 4
+static const char *settings_labels[] = {"Ekran", "Kilit", "Hotspot", "Mobil veri", "Arayüz"};
+#define NSET 5
 
 static void setting_value(int i, char *v)
 {
@@ -630,6 +630,9 @@ static void setting_value(int i, char *v)
 	case 3:
 		strcpy(v, S.wan_up ? "Açık" : "Kapalı");
 		break;
+	case 4:
+		strcpy(v, "Klasik");
+		break;
 	}
 }
 
@@ -640,21 +643,21 @@ static void draw_settings(void)
 
 	title("AYARLAR", 16, 60);
 	for (i = 0; i < NSET; i++) {
-		float y = 40 + i * 40;
+		float y = 38 + i * 34;
 
-		gfx_text(FONT_REGULAR, 12, 44, TOP(y + 8, 12), ALIGN_LEFT, C_FG, settings_labels[i]);
+		gfx_text(FONT_REGULAR, 12, 44, TOP(y + 6, 12), ALIGN_LEFT, C_FG, settings_labels[i]);
 		setting_value(i, v);
-		gfx_text(FONT_REGULAR, 11, 196, TOP(y + 9, 11), ALIGN_RIGHT, C_DIM, v);
-		gfx_fill_rect(44, (int)y + 34, 152, 1, C_HAIRLINE);
+		gfx_text(FONT_REGULAR, 11, 196, TOP(y + 7, 11), ALIGN_RIGHT, C_DIM, v);
+		gfx_fill_rect(44, (int)y + 28, 152, 1, C_HAIRLINE);
 	}
-	gfx_text(FONT_REGULAR, 9, 120, TOP(204, 9), ALIGN_CENTER, C_DIM2, "u30ui • Linux");
+	gfx_text(FONT_REGULAR, 9, 120, TOP(212, 9), ALIGN_CENTER, C_DIM2, "u30ui • Linux");
 }
 
 static void settings_tap(int y)
 {
-	int i = (y - 40) / 40;
+	int i = (y - 38) / 34;
 
-	if (y < 40 || i >= NSET)
+	if (y < 38 || i >= NSET)
 		return;
 	switch (i) {
 	case 0:
@@ -671,6 +674,10 @@ static void settings_tap(int y)
 		break;
 	case 3:
 		data_run(S.wan_up ? "ifdown wan" : "ifup wan");
+		break;
+	case 4:
+		/* the dashboard (tools/u30ui2): mu5358-screen starts it when /etc/mu5358/ui is not "classic" */
+		data_run("rm -f /etc/mu5358/ui; /etc/init.d/mu5358-screen restart");
 		break;
 	}
 }

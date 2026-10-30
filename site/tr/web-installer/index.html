@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Bu sayfa USB üzerinden bir cihazla konuşur. Kuralı: betikler ve stiller yalnızca bu siteden, bağlantı da yalnızca
+     bu siteye ve GitHub'ın API'sine. (Özet aşağıdaki tema betiğinin; bu sayfada web yazı tipi yok.) -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-soKh/tpEPakmmFYz71tBkGNCxZ3QCWXshSiSGpHasJk='; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.github.com; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<script>try{var t=localStorage.getItem("mu5358-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<title>Web kurucu: ZTE U30 Pro'ya tarayıcıdan OpenWrt</title>
+<meta name="description" content="Root'lu bir ZTE U30 Pro'ya (MU5358) Android'in yanına MU5358 Linux'u (OpenWrt) Chrome ya da Edge'den USB ile kurun; bilgisayara adb ya da betik gerekmez.">
+<link rel="canonical" href="https://kaandikec.com/mu5358-linux/tr/web-installer/">
+<link rel="alternate" hreflang="en" href="https://kaandikec.com/mu5358-linux/web-installer/">
+<link rel="alternate" hreflang="tr" href="https://kaandikec.com/mu5358-linux/tr/web-installer/">
+<link rel="alternate" hreflang="zh-Hans" href="https://kaandikec.com/mu5358-linux/zh/web-installer/">
+<link rel="alternate" hreflang="x-default" href="https://kaandikec.com/mu5358-linux/web-installer/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="MU5358 Linux">
+<meta property="og:title" content="Web kurucu: ZTE U30 Pro'ya tarayıcıdan OpenWrt">
+<meta property="og:description" content="Root'lu bir ZTE U30 Pro'ya Android'in yanına MU5358 Linux'u (OpenWrt) Chrome ya da Edge'den USB ile kurun.">
+<meta property="og:url" content="https://kaandikec.com/mu5358-linux/tr/web-installer/">
+<meta property="og:locale" content="tr_TR">
+<meta property="og:image" content="https://kaandikec.com/mu5358-linux/assets/img/ui-home.png">
+<meta name="theme-color" content="#f3f6fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/style.css">
+<link rel="stylesheet" href="../../assets/web-installer/web-installer.css">
+<script src="../../assets/site.js" defer></script>
+<script type="module" src="../../assets/web-installer/app.js"></script>
+</head>
+<body>
+<a class="skip" href="#content">İçeriğe geç</a>
+<header class="site-header">
+<div class="wrap">
+<a class="brand" href="../"><svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="26" fill="none" stroke="currentColor" stroke-width="4"/><circle cx="32" cy="15" r="5" fill="#2259d6"/><circle cx="49" cy="32" r="5" fill="#f2b23a"/><circle cx="32" cy="49" r="5" fill="#3fae6a"/><circle cx="15" cy="32" r="5" fill="currentColor"/><circle cx="32" cy="32" r="7" fill="none" stroke="#f2b23a" stroke-width="3.5"/></svg>MU5358 Linux</a>
+<nav class="site-nav" id="site-nav" aria-label="Ana menü">
+<a href="../#works">Neler çalışıyor</a>
+<a href="../#screen">Ekran</a>
+<a href="../#how">Nasıl açılıyor</a>
+<a href="../#build">Derleme</a>
+<a href="./" aria-current="page">Web kurucu</a>
+<a href="https://github.com/dikeckaan/mu5358-linux">GitHub</a>
+<span class="langs" role="group" aria-label="Dil"><a href="../../web-installer/" hreflang="en" lang="en">English</a><a href="./" hreflang="tr" lang="tr" aria-current="true">Türkçe</a><a href="../../zh/web-installer/" hreflang="zh-Hans" lang="zh-Hans">中文</a></span>
+</nav>
+<button class="theme-btn" type="button" hidden data-labels="Tema|Otomatik|Açık|Koyu|sistem ayarını izler|Renk temasını değiştir"><svg class="i-auto" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg><svg class="i-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><svg class="i-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="theme-name"></span></button>
+<button class="menu-btn" type="button" aria-expanded="false" aria-controls="site-nav">Menü</button>
+</div>
+</header>
+<main id="content">
+
+<header class="page-head">
+<div class="prose">
+<nav class="crumbs" aria-label="Konum"><a href="../">Ana sayfa</a> <span aria-hidden="true">/</span> <span aria-current="page">Web kurucu</span></nav>
+<h1>Web kurucu</h1>
+<p class="lede">Root'lu bir ZTE U30 Pro'ya Android'in yanına MU5358 Linux'u (OpenWrt) kurun, bir kez başlatın ve yeniden kaldırın: bu sayfadan, USB ile, Chrome ya da Edge'de. Bilgisayara hiçbir şey kurulmaz.</p>
+<div class="callout warn">
+<strong>Yeni ve tarayıcıdan henüz denenmedi</strong>
+<p>Bu sayfanın cihaz tarafı (sürümün <code>mu5358-install.sh</code> betiği) tek bir U30 Pro'da (MU5358, B19 yazılımı, Magisk) düz adb üzerinden denendi. Sayfanın kendisi, yani betiği WebUSB üzerinden çalıştıran tarayıcı, şimdiye dek yalnızca kendi <a href="?demo">denemesine</a> karşı çalıştırıldı, gerçek bir cihaza karşı değil. Pürüzler olabilir. Bir şey ters giderse günlüğü kaydedin (sayfa kaydedebilir) ve <a href="https://github.com/dikeckaan/mu5358-linux/issues">bize bildirin</a>.</p>
+</div>
+</div>
+</header>
+
+<div class="wrap">
+<noscript><p class="wi-noscript">Bu sayfa JavaScript ve WebUSB'li bir tarayıcı ister (bilgisayarda Chrome ya da Edge).</p></noscript>
+<div class="wi" id="wi-app" hidden><p class="wi-wait">Kurucu yükleniyor…</p></div>
+</div>
+
+<div class="prose">
+
+<nav class="toc" aria-labelledby="toc-h">
+<h2 id="toc-h">Bu sayfada</h2>
+<ol>
+<li><a href="#before">Başlamadan önce</a></li>
+<li><a href="#does">Sayfa ne yapar, cihazda ne çalışır</a></li>
+<li><a href="#where">Linux nereye gider: userdata'nın arkası ya da fulldumpdb</a></li>
+<li><a href="#once">Linux bir kez açılır, hiçbir zaman varsayılan olmaz</a></li>
+<li><a href="#safety">Sekme kapanırsa ya da kablo çıkarsa</a></li>
+<li><a href="#cannot-open">Tarayıcı cihazı açamıyorsa</a></li>
+<li><a href="#privacy">Sayfa neyi görür, neyi saklar</a></li>
+</ol>
+</nav>
+
+<h2 id="before">Başlamadan önce</h2>
+<ul>
+<li><strong>Magisk ile zaten root'lanmış</strong>, Android'i a yuvasından çalışan bir ZTE U30 Pro (MU5358, Unisoc UMS9632). Sayfa cihazı root'lamaz, önyükleyicinin kilidini açmaz; başka her cihazı reddeder.</li>
+<li><strong>Windows, macOS ya da Linux'ta Chrome, Edge veya başka bir Chromium tarayıcı.</strong> Firefox ve Safari'de WebUSB yok.</li>
+<li>Android'de USB hata ayıklama açık, cihaz takılı ve onu tutan başka bir program yok. Çalışan bir adb sunucusu cihazı tutar (<code>adb kill-server</code> ile durdurun); bu sayfanın açık olduğu başka bir sekme de.</li>
+<li>Kabuğa root: Magisk ilk seferde cihazda sorar (“Shell” root istiyor). İzin verin.</li>
+<li>Sürümün <a href="https://github.com/dikeckaan/mu5358-linux/releases">projenin sürümlerinden</a> indirilmiş dosyaları: <code>SHA256SUMS</code>, <code>SHA256SUMS.sig</code>, <code>mu5358-openwrt.img.gz</code> (yaklaşık 53 MB), <code>mu5358-kernel.Image.gz</code>, <code>mu5358-ramdisk.tar.gz</code>, <code>mu5358-tools.tar.gz</code>, <code>mu5358-install.sh</code> ve <code>android-files.txt</code>. Bir web sayfası GitHub sürümünün dosyalarını kendisi indiremez; siz indirir, sayfada seçersiniz.</li>
+<li>userdata'nın arkasındaki alan için: Linux'un payı alındıktan sonra Android'in /data'sında en az 4 GiB boş yer.</li>
+<li>Kurulan sistemde root için bir parola (en az 6 karakter), sayfada yazılır: SSH ve web paneli için root'un parolası olur; OpenWrt yoksa onları parolasız bırakır. Cihaza yalnızca özeti gider.</li>
+</ul>
+
+<h2 id="does">Sayfa ne yapar, cihazda ne çalışır</h2>
+<p>Sayfa küçük bir adb istemcisidir. Sürümlerin listesini, GitHub'ın her dosya için hesapladığı SHA-256 ile birlikte GitHub'ın API'sinden okur. İndirilen dosyaları seçtiğinizde onları tarayıcıda denetler: <code>SHA256SUMS</code>'un sağlama toplamı GitHub'ınkiyle aynı olmalı ve projenin sürüm anahtarıyla imzalı olmalı (<code>SHA256SUMS.sig</code>, usign biçiminde bir Ed25519 imzası; sayfaya gömülü anahtarla denetlenir: kaynaktaki <code>installer/release.pub</code>, numarası <code>15fd2f702186c19e</code>); diğer her dosyanın sağlama toplamı <code>SHA256SUMS</code>'ta yazanla aynı olmalı. Projenin imzasını taşımayan bir <code>SHA256SUMS</code>, GitHub ne derse desin reddedilir. Cihaza ancak ondan sonra bir şey gider.</p>
+<p>Cihazda her şeyi sürümün kendi betiği, <code>mu5358-install.sh</code>, Magisk'in <code>su</code>'su ile root olarak yapar. Sayfa betiği ve sürümün dosyalarını <code>/data/local/tmp/mu5358-web</code> dizinine koyar; betik onları root'un kendi dizinine (<code>/data/adb/mu5358</code>) taşır ve kullanmadan önce hepsini yeniden denetler. Sonra kurulumu kendi işi olarak çalıştırır; sayfa onu izler: adımlar, günlük, sonuç.</p>
+<ul>
+<li><strong>Kurulum</strong> (ya da güncelleme): sistem, yani OpenWrt, bu cihazın kendi üretici dosyalarıyla (modüller, yazılım, Wi-Fi kalibrasyonu, modem ve GPU kullanıcı alanı; Android'inden kopyalanır) ve b yuvasının boot imajları. Sayfada yazdığınız root parolası sisteme işlenir (özeti olarak; cihaz parolanın kendisini hiç görmez).</li>
+<li><strong>Linux'u bir kez başlatma</strong>: Linux bir kez açılır; sonraki yeniden başlatma yine Android'dir.</li>
+<li><strong>Kaldırma</strong>: b yuvası Android'in boot imajlarına döner, sistem silinir, alanı tutmazsanız Android'e geri verilir.</li>
+<li><strong>Yedek</strong>: ilk kurulumun üzerine yazdıklarını (b yuvasının boot ve init_boot'u, misc) indirme.</li>
+</ul>
+<p>Hiç yazmadıkları: a yuvası, NV bölümleri (radyo kalibrasyonu, IMEI: <code>nr_*nv*</code>, <code>prodnv</code>, <code>calinv</code>, <code>miscdata</code>, <code>persist</code>, <code>ztepersist</code>), Android'in verisinin hiçbir parçası, ve userdata'nın sonu dışında bölüm tablosunun hiçbir kaydı.</p>
+
+<h2 id="where">Linux nereye gider: userdata'nın arkası ya da fulldumpdb</h2>
+<div class="table-scroll"><table>
+<thead><tr><th scope="col"></th><th scope="col">userdata'nın arkası (önerilen)</th><th scope="col">fulldumpdb</th></tr></thead><tbody>
+<tr><th scope="row">Linux'un yeri</th><td>Seçiminize göre 4, 8 ya da 16 GiB (varsayılan 4 GiB)</td><td>2 GiB</td></tr>
+<tr><th scope="row">Ne değişir</th><td>Android'in userdata bölümü daha önce biter. Dosya sistemi Android çalışırken küçültülür; Android'in hiçbir şeyi silinmez. Arada Android bir kez yeniden başlamalı: sayfa bunu yapar, yeniden bağlanır ve devam eder.</td><td>Hiçbir şey yeniden bölümlenmez. Üreticinin normal bir cihazda boş olan çökme dökümü bölümü sistemi alır.</td></tr>
+<tr><th scope="row">Kaldırınca</th><td>Alan userdata'ya geri verilir (Android bir sonraki açılışında onu kullanır) ya da sonraki bir kurulum için boş tutulur.</td><td>fulldumpdb geldiği gibi sıfırlanır.</td></tr>
+</tbody></table></div>
+
+<h2 id="once">Linux bir kez açılır, hiçbir zaman varsayılan olmaz</h2>
+<p>Kurulum hangi sistemin açılacağını değiştirmez: her yeniden başlatmada yine Android açılır. Linux yalnızca “Bir kez Linux'la yeniden başlat”a bastığınızda açılır. Cihaz o zaman açılış denetiminin (misc) 32 baytını yazar, geri okur ve yeniden başlar; b yuvası o bir kez denenir. Linux'ta ne olursa olsun, sonraki yeniden başlatma yine Android'dir: açılmayan bir Linux'tan çıkmak için gücü kesin ya da güç düğmesine basılı tutun. Sayfa Linux'u kendisi yönetemez; ona USB üzerinden SSH ile ulaşın.</p>
+
+<h2 id="safety">Sekme kapanırsa ya da kablo çıkarsa</h2>
+<p>Kurulum cihazda bir iştir. Bu sayfaya ihtiyacı yoktur: sekmeyi kapatmak, tarayıcının çökmesi ya da bilgisayarın uykuya geçmesi sayfanın işi görmesini bitirir, işi değil. Yeniden bağlanın; sayfa nerede olduğunu gösterir ve sonuna kadar izler.</p>
+<div class="table-scroll"><table>
+<thead><tr><th scope="col">Şu sırada durursa</th><th scope="col">Cihaz o zaman</th></tr></thead><tbody>
+<tr><th scope="row">dosyalar gönderilip denetlenirken</th><td>Bölümlerine hiçbir şey yazılmadı. Android'i açar.</td></tr>
+<tr><th scope="row">userdata'nın arkasında yer açılırken</th><td>Küçültmeyi çekirdeğin kendi f2fs kodu yapar; önce boş yeri denetler ve bir deneme yapar. Bölüm tablosu ondan sonra değişir. Güç ikisinin arasında giderse Android bir sonraki açılışında dosya sistemini geri büyütür. Android'i açar.</td></tr>
+<tr><th scope="row">açılış zinciri kopyalanırken, sistem ya da b yuvasının boot'u yazılırken</th><td>Yalnızca b yuvası ve Linux'un alanı yazılır, a yuvası asla. Açılış denetimi hâlâ Android diyor: Android'i açar. Kurulumu yeniden çalıştırın.</td></tr>
+<tr><th scope="row">kurulumdan sonra</th><td>Siz Linux'u bir kez isteyene dek Android.</td></tr>
+</tbody></table></div>
+<p>Kaldırma ters sırayla gider: önce Android'in açılış denetimi, sonra b yuvasının boot imajları a yuvasından geri, sonra sistem silinir. Ne durdurursa durdursun cihaz Android'i açar.</p>
+
+<h2 id="cannot-open">Tarayıcı cihazı açamıyorsa</h2>
+<div class="qa"><p><strong>Her yerde</strong></p>
+<p>Çalışan bir adb sunucusu (Android Studio, terminalde <code>adb</code>, scrcpy) cihazı aldı ya da başka bir sekmede bu sayfa açık ve bağlı. Cihazla aynı anda yalnızca bir program konuşabilir.</p>
+<div><code>adb kill-server</code>, o programları ve o sekmeyi kapatın, yeniden bağlanın. Sebep buysa sayfa “cihazı başka bir program kullanıyor” der.</div></div>
+<div class="qa"><p><strong>Windows</strong></p>
+<p>Tarayıcı yalnızca <strong>WinUSB</strong> sürücüsü olan bir arayüzü kullanabilir. U30 Pro'nun adb arayüzünün bunu Windows'tan kendiliğinden alıp almadığı ölçülmedi; yerinde üreticinin kendi adb sürücüsü varsa tarayıcı açamaz.</p>
+<div>Aygıt Yöneticisi'nde cihazın “ADB Interface”ine bakın. Başka bir sürücüsü varsa ya da hiç yoksa Google'ın USB sürücüsünü kurun (WinUSB'dir) ya da Zadig ile o arayüze WinUSB bağlayın. Yalnızca adb arayüzünü değiştirin, ağ ya da modem arayüzlerini değil.</div></div>
+<div class="qa"><p><strong>Linux</strong></p>
+<p>Cihaz düğümü root'a ait, bu yüzden tarayıcı ona yazamaz.</p>
+<div>adb arayüzleri için bir udev kuralı ekleyin, sonra cihazı yeniden takın:
+<pre><code>echo 'SUBSYSTEM=="usb", ATTR{bInterfaceClass}=="ff", ATTR{bInterfaceSubClass}=="42", MODE="0660", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/51-adb-webusb.rules
+sudo udevadm control --reload &amp;&amp; sudo udevadm trigger</code></pre>
+snap ya da flatpak olarak kurulmuş bir tarayıcının USB için ayrıca izne ihtiyacı olabilir.</div></div>
+<div class="qa"><p><strong>macOS</strong></p>
+<p>Kurulacak bir şey yok. Tarayıcıyı yalnızca cihazı tutan başka bir program durdurur.</p>
+<div>O programı kapatın.</div></div>
+
+<h2 id="privacy">Sayfa neyi görür, neyi saklar</h2>
+<ul>
+<li>Sürümlerin listesi için <strong>GitHub'ın API'sine</strong>, kendi dosyaları için bu siteye bağlanır. Başka hiçbir yere değil: analiz yok, başka sitelerden yazı tipi ya da betik yok. Sayfanın kuralı (CSP) başka bir yere bağlanmasına izin vermez.</li>
+<li>Cihazdan IMEI, IMSI, ICCID ya da telefon numarası hiç istemez, NV bölümlerini hiç okumaz.</li>
+<li>Seri numarası maskeli gösterilir. Ekrandaki ve kaydedebileceğiniz dosyadaki günlükte seri numaraları, kimlik numaraları, telefon numaraları, MAC adresleri ve anahtarlar maskelidir.</li>
+<li>Tarayıcının bu site için depolamasında tek bir şey tutar: bu tarayıcının adb anahtarı; izin verdikten sonra cihaz onu hatırlar.</li>
+</ul>
+
+</div>
+
+</main>
+<footer class="site-footer">
+<div class="wrap">
+<div>
+<h2>Proje</h2>
+<ul>
+<li><a href="https://github.com/dikeckaan/mu5358-linux">GitHub'da kaynak kod</a></li>
+<li><a href="https://github.com/sponsors/dikeckaan">Projeye destek ol</a></li>
+<li><a href="https://kaandikec.com/mu300-linux/tr/">MU300 Linux (ZTE F50, U30 Air)</a></li>
+</ul>
+</div>
+<div>
+<h2>Yardım</h2>
+<ul>
+<li><a href="https://github.com/dikeckaan/mu5358-linux/issues">Sorun bildir</a></li>
+<li><a href="https://t.me/mu300project">Telegram kanalı (haberler)</a></li>
+</ul>
+</div>
+<div>
+<p>Bir hobi projesi; risk sana ait, garanti yok. ZTE, Unisoc ya da herhangi bir operatör tarafından desteklenmez. Betikler ve belgeler: MIT; çekirdek modülleri ve yamaları: GPL-2.0.</p>
+</div>
+</div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,31 @@
+#!/bin/sh
+# U30 Pro: the hotspot watched (mu300's wifiretry, for the AIC8800). Every 60 s, while the access point is meant to
+# be on (wireless.ap0.disabled is not 1): hostapd must answer for wlan0 and wlan0 must be up; when either fails three
+# times in a row, `wifi up` brings the radio back, at most once in 10 minutes (a firmware that is really gone needs
+# the module reloaded - mu5358-hw's job, logged here for the record). Runs from mu5358-wifiwatch (procd, respawn).
+fails=0 last_up=0
+sleep 90
+while :; do
+	sleep 60
+	[ "$(uci -q get wireless.ap0.disabled)" = 1 ] && { fails=0; continue; }
+	ok=1
+	ubus -t 5 call hostapd.wlan0 get_status >/dev/null 2>&1 || ok=0
+	ip -o link show wlan0 2>/dev/null | grep -q "state UP" || ok=0
+	if [ $ok = 1 ]; then
+		fails=0
+		continue
+	fi
+	fails=$((fails + 1))
+	logger -t mu5358-wifiwatch "the access point does not answer ($fails/3): hostapd $(ubus -t 5 call hostapd.wlan0 get_status >/dev/null 2>&1 && echo ok || echo gone), wlan0 $(cat /sys/class/net/wlan0/operstate 2>/dev/null || echo missing)"
+	[ $fails -ge 3 ] || continue
+	now=$(cut -d. -f1 /proc/uptime)
+	if [ $((now - last_up)) -lt 600 ]; then
+		logger -t mu5358-wifiwatch "brought up $((now - last_up)) s ago: waiting"
+		continue
+	fi
+	dmesg | tail -n 50 | grep -i "aic\|fw_error\|firmware" | tail -n 3 | logger -t mu5358-wifiwatch
+	logger -t mu5358-wifiwatch "wifi up"
+	wifi up
+	last_up=$now
+	fails=0
+done

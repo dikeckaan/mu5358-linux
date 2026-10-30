@@ -8,8 +8,8 @@ id_of() {  # id_of NAME FILE: the id (third field) of NAME in FILE (passwd or gr
     while IFS=: read -r n _ i _ || [ -n "$n" ]; do [ "$n" = "$1" ] && { echo "$i"; return 0; }; done < "$2"
     return 0
 }
-E=${MU300_ETC:-/etc}
-VU=${MU300_VENDOR_USER-mu300vnd}
+E=${MU5358_ETC:-/etc}
+VU=${MU5358_VENDOR_USER-mu5358vnd}
 V=; VG=
 [ -z "$VU" ] || { V=$(id_of "$VU" "$E/passwd"); VG=$(id_of "$VU" "$E/group"); }
 V=${V:-1000}; VG=${VG:-1000}

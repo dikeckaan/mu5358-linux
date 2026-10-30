@@ -31,3 +31,6 @@ _site/
 # notes written for the owner, not for the repository
 docs/RAPOR-*.md
 .playwright-mcp/
+installer/gpt-userdata
+installer/f2fs-shrink
+tools/u30ui2/u30ui2

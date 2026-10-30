@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var t=localStorage.getItem("mu5358-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<title>MU5358 Linux：在中兴 U30 Pro 5G 随身热点上运行 OpenWrt</title>
+<meta name="description" content="在中兴 U30 Pro（MU5358，紫光展锐 UMS9632）5G 随身热点上与 Android 并存运行 OpenWrt，并把它的圆形屏幕用作控制面板。一个能用的研究性移植，还没有安装器。">
+<link rel="canonical" href="https://kaandikec.com/mu5358-linux/zh/">
+<link rel="alternate" hreflang="en" href="https://kaandikec.com/mu5358-linux/">
+<link rel="alternate" hreflang="tr" href="https://kaandikec.com/mu5358-linux/tr/">
+<link rel="alternate" hreflang="zh-Hans" href="https://kaandikec.com/mu5358-linux/zh/">
+<link rel="alternate" hreflang="x-default" href="https://kaandikec.com/mu5358-linux/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="MU5358 Linux">
+<meta property="og:title" content="MU5358 Linux：在中兴 U30 Pro 5G 随身热点上运行 OpenWrt">
+<meta property="og:description" content="在中兴 U30 Pro（UMS9632）上与 Android 并存运行 OpenWrt，圆形屏幕用作控制面板。一个能用的研究性移植。">
+<meta property="og:url" content="https://kaandikec.com/mu5358-linux/zh/">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://kaandikec.com/mu5358-linux/assets/img/ui2-home-zh.png">
+<meta name="theme-color" content="#f3f6fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#content">跳到正文</a>
+<header class="site-header">
+<div class="wrap">
+<a class="brand" href="./"><svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="26" fill="none" stroke="currentColor" stroke-width="4"/><circle cx="32" cy="15" r="5" fill="#2259d6"/><circle cx="49" cy="32" r="5" fill="#f2b23a"/><circle cx="32" cy="49" r="5" fill="#3fae6a"/><circle cx="15" cy="32" r="5" fill="currentColor"/><circle cx="32" cy="32" r="7" fill="none" stroke="#f2b23a" stroke-width="3.5"/></svg>MU5358 Linux</a>
+<nav class="site-nav" id="site-nav" aria-label="Main">
+<a href="#works">能做什么</a>
+<a href="#screen">屏幕</a>
+<a href="#how">启动过程</a>
+<a href="#build">自己构建</a>
+<a href="web-installer/">网页安装器</a>
+<a href="https://github.com/dikeckaan/mu5358-linux">GitHub</a>
+<span class="langs" role="group" aria-label="语言"><a href="../" hreflang="en" lang="en">English</a><a href="../tr/" hreflang="tr" lang="tr">Türkçe</a><a href="./" hreflang="zh-Hans" lang="zh-Hans" aria-current="true">中文</a></span>
+</nav>
+<button class="theme-btn" type="button" hidden data-labels="主题|自动|浅色|深色|跟随系统|切换颜色主题"><svg class="i-auto" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg><svg class="i-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><svg class="i-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="theme-name"></span></button>
+<button class="menu-btn" type="button" aria-expanded="false" aria-controls="site-nav">菜单</button>
+</div>
+</header>
+<main id="content">
+
+<section class="hero">
+<div class="wrap">
+<div>
+<h1>把 U30 Pro 变成一台自带屏幕的 Linux 路由器</h1>
+<p class="lede">在中兴 U30 Pro（MU5358，紫光展锐 UMS9632）上，<strong>OpenWrt</strong> 与 Android 并存。移动数据、Wi-Fi 6 热点、
+USB 上的 SSH，再加上随身热点的圆形屏幕：一个路由器仪表盘，有中文、英文和土耳其文。Android 原样保留，
+每次重启都会自动回到 Android。</p>
+<div class="actions">
+<a class="btn primary" href="#status">先看现状</a>
+<a class="btn" href="https://github.com/dikeckaan/mu5358-linux">GitHub 上的源代码</a>
+<a class="btn sponsor" href="https://github.com/sponsors/dikeckaan"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path fill="currentColor" d="M8 14.2 6.9 13.2C3 9.7.5 7.4.5 4.6.5 2.4 2.2.7 4.4.7c1.2 0 2.4.6 3.1 1.5C8.2 1.3 9.4.7 10.6.7c2.2 0 3.9 1.7 3.9 3.9 0 2.8-2.5 5.1-6.4 8.6z"/></svg>赞助</a>
+</div>
+<p class="sponsor-note"><a href="https://kaandikec.com/mu300-linux/zh/">MU300 Linux</a>（中兴 F50 和 U30 Air）的姊妹项目，同样由土耳其的一个人开发。</p>
+</div>
+<img class="hero-shot" src="../assets/img/ui2-home-zh.png" width="240" height="240" alt="U30 Pro 圆形屏幕上仪表盘的主页：状态栏有信号、LTE、时间和电量；运营商、频段和信号强度；最近一分钟的速率曲线；下行 2.4 Mbit/s、上行 310 kbit/s；2 个客户端和今天的流量">
+</div>
+</section>
+
+<section>
+<div class="wrap prose">
+
+<h2 id="status">现状：一个能用的研究性移植</h2>
+<div class="callout warn"><strong>还没有安装器，也没有发布版本。</strong>这里的一切都是在一台已 root 的设备上，用仓库里的脚本手工
+调出来并测试的。公开它是为了让这项工作可见，也便于他人跟进。如果您对 adb、Magisk root、分区和串口控制台不熟悉，
+请等安装器出来。另有一个<a href="web-installer/">网页安装器</a>页面（Chrome 或 Edge，通过 USB）；它是新的，浏览器这一侧到目前为止只在
+它自己的演示上运行过，还没有在真机上试过。</div>
+<p>它已经做得不错的地方：3 小时的持续运行测试，每一项检查（USB、网络注册、移动数据、ping、Wi-Fi）都是绿的，没有内核 oops，
+NV 分区逐字节未变，内存占用平稳；连续六次重启，每次都自行全部启动完毕。</p>
+
+<h2 id="works">能做什么</h2>
+<ul class="dots">
+<li><strong>移动数据（LTE）</strong>Android 自己的基带守护进程在 chroot 中运行，与 MU300 Linux 相同。同一位置 Android 为 11-12 Mbit/s，这里为 14-19 Mbit/s。</li>
+<li><strong>Wi-Fi 6 热点</strong>AIC8800D80X2，5 GHz，HE80，WPA2，使用主板自己的 MAC 地址和校准数据。</li>
+<li><strong>屏幕</strong>圆形屏幕上的仪表盘，有中文、英文和土耳其文：带实时速率曲线的主页、网络、Wi-Fi（带扫码加入的二维码）、客户端、流量、短信、电池、系统、设置、电源和日志。一个 1.6 MB 的可执行文件，约 6 MB 内存，亮屏时占 0.5 % 的 CPU。启动器外观的"经典"界面仍可选用。</li>
+<li><strong>按键</strong>电源键：屏幕开/关，长按：关机。Wi-Fi 键长按：热点关/开。</li>
+<li><strong>USB 网络和 SSH</strong>接到电脑上：<code>ssh root@192.168.58.1</code>，另有串口控制台。</li>
+<li><strong>GPU</strong>Mali-G57，通过 Android 的驱动提供 OpenGL ES 3.2、EGL 1.5 和 Vulkan，按需加载。</li>
+<li class="g"><strong>Android 原样保留</strong>Linux 只会作为一次性的试启动运行；重启、关机、内核 oops 或启动失败，最终都回到 Android。</li>
+<li class="r"><strong>尚未做到</strong>休眠和省电、100 % 以下的充电验证、长时间纯电池运行、蓝牙、NFC、SIM 卡托检测、USB OTG、通话和音频、发送短信、OpenCL。</li>
+</ul>
+
+<h2 id="screen">屏幕</h2>
+<p>U30 Pro 有一块 240×240 的圆形屏幕和一个触摸面板。在 Linux 下，它是一个路由器仪表盘：<code>u30ui2</code>，用 C 写成，直接画在内核的
+DRM 上，有简体中文、英文和土耳其文（语言是屏幕上的一项设置）。左右滑动换页，下滑回到主页或关闭打开的内容。开机时锁定（长按解锁），
+两分钟没有触摸就再次锁定；电源键点亮或熄灭屏幕，超时则自动熄屏。</p>
+<p>它是新的：仪表盘在 2026-10-30 取代启动器外观的界面成为默认，到目前为止只在一台设备上跑过。整个程序是一个 1.6 MB 的静态可执行文件
+（字体在内），约 6 MB 内存；亮屏且主页的实时曲线在动时占 0.5 % 的 CPU；熄屏时什么也不画，数据读取放慢到每 30 秒一次。
+下面的图片是它在电脑上的预览，用的是示例数据。</p>
+<ul class="shots">
+<li><figure><img src="../assets/img/ui2-home-zh.png" width="240" height="240" alt="主页：运营商、LTE 频段和信号强度、最近一分钟的速率曲线、下行和上行速率、2 个客户端和今天的流量" loading="lazy"><figcaption>主页</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-network-zh.png" width="240" height="240" alt="网络：最近十分钟的信号曲线、运营商、频段和 EARFCN、小区和 PCI、RSRP 和 RSRQ、IP 地址、APN，以及移动数据开关" loading="lazy"><figcaption>网络</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-wifi-zh.png" width="240" height="240" alt="Wi-Fi：网络名称、5 GHz 信道 36、80 MHz、2 个客户端、隐藏的密码、热点开关和一个二维码按钮" loading="lazy"><figcaption>Wi-Fi</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-wifi-qr-zh.png" width="240" height="240" alt="全屏二维码，用手机相机扫码加入热点" loading="lazy"><figcaption>扫码加入</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-clients-zh.png" width="240" height="240" alt="客户端：每台已连接的设备，名称或地址、MAC、信号，以及下行和上行字节数" loading="lazy"><figcaption>客户端</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-traffic-zh.png" width="240" height="240" alt="流量：最近 60 秒的下行和上行曲线，以及今天、本月和开机以来的流量" loading="lazy"><figcaption>流量</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-sms-zh.png" width="240" height="240" alt="短信：三条短信，各有发件人、时间和第一行" loading="lazy"><figcaption>短信</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-sms-open-zh.png" width="240" height="240" alt="完整打开的一条短信，带日期；下滑关闭" loading="lazy"><figcaption>打开的一条短信</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-battery-zh.png" width="240" height="240" alt="电池：87% 的绿色电量环、使用电池中、电流、电压和温度，以及大致的剩余时间" loading="lazy"><figcaption>电池</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-system-zh.png" width="240" height="240" alt="系统：每个 CPU 核心一根柱和时钟频率、内存、存储、四个温度、负载和运行时间，以及版本号" loading="lazy"><figcaption>系统</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-settings-zh.png" width="240" height="240" alt="设置：语言、熄屏时间、亮度、锁定和界面（仪表盘或经典）" loading="lazy"><figcaption>设置</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-power-zh.png" width="240" height="240" alt="电源：重启到 Android、关机、重启基带、重启 Wi-Fi、熄屏" loading="lazy"><figcaption>电源</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui2-log-zh.png" width="240" height="240" alt="日志：系统日志的最后几行" loading="lazy"><figcaption>日志</figcaption></figure></li>
+</ul>
+<h3 id="classic">经典界面</h3>
+<p>最初的界面 <code>u30ui</code>，按 U30 的 Android 启动器的外观做成（相同的花瓣、颜色和页面，但没有 Android），作为"经典"界面保留在系统里。
+两个界面的设置页都能切换到另一个。</p>
+<ul class="shots classic">
+<li><figure><img src="../assets/img/ui-home.png" width="240" height="240" alt="经典主屏幕：中间是带电量环的时钟，周围四个圆形花瓣（WiFi、Mesaj、Pil、Ayar）" loading="lazy"><figcaption>主屏幕</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui-status.png" width="240" height="240" alt="状态页：运营商、信号格、下载和上传速率、电量和客户端数量" loading="lazy"><figcaption>状态</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui-wifi-qr.png" width="240" height="240" alt="用手机相机扫码加入热点的二维码" loading="lazy"><figcaption>扫码加入</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui-sms.png" width="240" height="240" alt="有两条短信的消息页" loading="lazy"><figcaption>短信</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui-battery.png" width="240" height="240" alt="电池页：87% 的电量环、电流、电压和温度" loading="lazy"><figcaption>电池</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui-actions.png" width="240" height="240" alt="电源操作：重启、关机、断开数据、熄屏，每项都需长按一秒" loading="lazy"><figcaption>电源操作</figcaption></figure></li>
+</ul>
+<p>有个细节值得一提：这块面板是倒着装的，而在 CPU 上把画面转过来，会让每一帧动态画面都撕裂，因为那样各行到达面板的顺序
+正好与它自身的扫描方向相反。现在改由面板自己旋转画面（它的 MADCTL 寄存器，由一个很小的内核模块设置），撕裂就没有了。</p>
+
+<h2 id="how">启动过程</h2>
+<ol class="steps">
+<li><h3>Android 请求一次槽位 b</h3><p>在已 root 的 Android 中，一条一次性的“试一次槽位 b”请求被写入 <code>misc</code> 分区。</p></li>
+<li><h3>LK 启动槽位 b</h3><p>主板自己的 GKI 6.6 内核，加一个小片段重新构建，配上我们的 <code>init_boot_b</code> ramdisk。</p></li>
+<li><h3>ramdisk 立刻把它改回去</h3><p>它加载厂商模块，启动 USB，并在开机 1.6 秒时就把 <code>misc</code> 改回 Android，赶在任何问题发生之前。</p></li>
+<li><h3>OpenWrt 启动</h3><p>从 eMMC 上 <code>userdata</code> 之后属于它自己的区域启动。基带拿到的 NV 分区只是内存中的副本；真正的 NV 从不被写入。</p></li>
+</ol>
+<p>槽位 a 和 NV 分区从不被写入。任何重启、关机、内核 oops（内核遇到 oops 会重启）或启动失败，最终都回到 Android。</p>
+
+<h2 id="build">自己构建</h2>
+<p>给想跟进这项工作的人。每一步都在装有 Docker 和 adb 的电脑上进行，对象是一台已 root 的 U30 Pro，并且先做完整备份。</p>
+<ol>
+<li><strong>备份全部内容</strong>：<code>tools/backup-full.sh OUTDIR</code>（每个分区，并与设备上计算的哈希值核对）。</li>
+<li><strong>内核</strong>：在 <code>kernel/Dockerfile</code> 的容器里运行 <code>kernel/build.sh</code>（设备自身提交点的 GKI android15-6.6，加上 <code>kernel/mu5358-linux.fragment</code>）。</li>
+<li><strong>启动镜像</strong>：<code>boot/build-initboot.py</code> 用原厂镜像和 <code>boot/init</code> 生成 <code>init_boot_b</code>（以及 <code>boot_b</code>）。</li>
+<li><strong>根文件系统</strong>：<code>openwrt/build-rootfs.sh</code> 基于 MU300 Linux 的 OpenWrt 发布版本；<code>openwrt/customize.sh</code> 把它改成这块主板的。</li>
+<li><strong>Android 的文件</strong>（基带守护进程、固件、GPU 驱动）：由 <code>modem/</code> 和 <code>gpu/</code> 里的脚本从您自己的设备上提取。它们不在仓库里。</li>
+</ol>
+<p>系统实际运行的情况（服务、硬件状态、已知行为、日志在哪里）写在
+<a href="https://github.com/dikeckaan/mu5358-linux/blob/main/docs/GKI-SYSTEM.md">docs/GKI-SYSTEM.md</a>。</p>
+
+<h2 id="faq">常见问题</h2>
+<details class="faq"><summary>它和 MU300 Linux 是一回事吗？</summary><div><p>它建立在 MU300 Linux 的 OpenWrt 和基带工具之上，
+但 U30 Pro 是另一颗芯片（UMS9632）、另一颗 Wi-Fi 芯片，多了屏幕和触摸面板，Android 也更新（15），用的是 GKI 内核。
+所以内核部分、启动路径、基带的 NV 处理、Wi-Fi 以及屏幕上的一切都是新的。MU300 Linux 不支持 U30 Pro。</p></div></details>
+<details class="faq"><summary>会把我的设备变砖吗？</summary><div><p>本项目从不写入槽位 a 和 NV 分区，也从不把 Linux 设为默认启动。
+尽管如此，在已 root 的设备上写分区从来都不是零风险；所以第一步永远是完整备份。</p></div></details>
+<details class="faq"><summary>为什么是 OpenWrt 而不是 Ubuntu？</summary><div><p>它轻量（整个系统空闲时只占几十 MB），本身就是路由器系统，
+而且 MU300 Linux 的 OpenWrt 已经带着基带工具。Ubuntu 可能以后会有。</p></div></details>
+<details class="faq"><summary>什么时候会有安装器？</summary><div><p>等纯电池运行和充电验证通过、24 小时持续运行测试通过之后。
+请关注仓库的动态。</p></div></details>
+
+</div>
+</section>
+</main>
+<footer class="site-footer">
+<div class="wrap">
+<div>
+<h2>项目</h2>
+<ul>
+<li><a href="https://github.com/dikeckaan/mu5358-linux">GitHub 上的源代码</a></li>
+<li><a href="https://github.com/sponsors/dikeckaan">支持本项目</a></li>
+<li><a href="https://kaandikec.com/mu300-linux/zh/">MU300 Linux（中兴 F50、U30 Air）</a></li>
+</ul>
+</div>
+<div>
+<h2>帮助</h2>
+<ul>
+<li><a href="https://github.com/dikeckaan/mu5358-linux/issues">报告问题</a></li>
+<li><a href="https://t.me/mu300project">Telegram 频道（动态）</a></li>
+</ul>
+</div>
+<div>
+<p>这是一个业余项目，风险自负，不提供任何担保。与中兴、紫光展锐或任何运营商无关，也未获其认可。脚本和文档：MIT；内核模块和补丁：GPL-2.0。</p>
+</div>
+</div>
+</footer>
+</body>
+</html>
