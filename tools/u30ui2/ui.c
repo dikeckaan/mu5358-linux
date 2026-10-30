@@ -113,7 +113,20 @@ static void text_fit(int font, float px, float x, float y, int align, uint32_t c
 	char b[256];
 	int n = snprintf(b, sizeof(b), "%s", s);
 
-	if (gfx_text_width(font, px, b) <= maxw) {
+	/* snprintf's answer is the whole string's length, not the buffer's: a longer string is cut here, at a
+	 * character boundary, with room for the ellipsis (3 bytes) and the NUL */
+	int cut = 0;
+
+	if (n < 0)
+		n = 0;
+	if (n > (int)sizeof(b) - 4) {
+		n = (int)sizeof(b) - 4;
+		while (n > 0 && (b[n] & 0xc0) == 0x80)
+			n--;
+		strcpy(b + n, "…");
+		cut = 1;
+	}
+	if (!cut && gfx_text_width(font, px, b) <= maxw) {
 		gfx_text(font, px, x, y, align, c, b);
 		return;
 	}
