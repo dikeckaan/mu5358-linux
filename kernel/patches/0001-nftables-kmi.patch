@@ -1,0 +1,300 @@
+--- a/include/net/net_namespace.h
++++ b/include/net/net_namespace.h
+@@ -146,12 +146,10 @@
+ #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
+ 	struct netns_ct		ct;
+ #endif
+-#if defined(CONFIG_NF_TABLES) || defined(CONFIG_NF_TABLES_MODULE)
+-	struct netns_nftables	nft;
+-#endif
+-#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
+-	struct netns_ft ft;
+-#endif
++	/* mu5358: no netns_nftables / netns_ft here. The U30 Pro's vendor modules were built against the GKI struct
++	 * net, which has neither (CONFIG_NF_TABLES and NF_FLOW_TABLE are off in GKI): nf_tables keeps its generation
++	 * cursor in struct nftables_pernet, and the flow table keeps no statistics.
++	 */
+ #endif
+ #ifdef CONFIG_WEXT_CORE
+ 	struct sk_buff_head	wext_nlevents;
+--- a/include/net/netfilter/nf_conntrack_l4proto.h
++++ b/include/net/netfilter/nf_conntrack_l4proto.h
+@@ -188,6 +188,13 @@
+ 	return &net->ct.nf_ct_proto.generic;
+ }
+ 
++#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
++/* mu5358: the flow table's conntrack timeouts, for every namespace - per namespace they would be fields of struct
++ * net (struct nf_tcp_net / nf_udp_net), which the vendor modules were built without */
++extern unsigned int nf_tcp_offload_timeout;
++extern unsigned int nf_udp_offload_timeout;
++#endif
++
+ static inline struct nf_tcp_net *nf_tcp_pernet(struct net *net)
+ {
+ 	return &net->ct.nf_ct_proto.tcp;
+--- a/include/net/netfilter/nf_flow_table.h
++++ b/include/net/netfilter/nf_flow_table.h
+@@ -361,12 +361,11 @@
+ 	return true;
+ }
+ 
+-#define NF_FLOW_TABLE_STAT_INC(net, count) __this_cpu_inc((net)->ft.stat->count)
+-#define NF_FLOW_TABLE_STAT_DEC(net, count) __this_cpu_dec((net)->ft.stat->count)
+-#define NF_FLOW_TABLE_STAT_INC_ATOMIC(net, count)	\
+-	this_cpu_inc((net)->ft.stat->count)
+-#define NF_FLOW_TABLE_STAT_DEC_ATOMIC(net, count)	\
+-	this_cpu_dec((net)->ft.stat->count)
++/* mu5358: no statistics - they lived in struct net (netns_ft), which the GKI KMI does not have */
++#define NF_FLOW_TABLE_STAT_INC(net, count) do { (void)(net); } while (0)
++#define NF_FLOW_TABLE_STAT_DEC(net, count) do { (void)(net); } while (0)
++#define NF_FLOW_TABLE_STAT_INC_ATOMIC(net, count) do { (void)(net); } while (0)
++#define NF_FLOW_TABLE_STAT_DEC_ATOMIC(net, count) do { (void)(net); } while (0)
+ 
+ #ifdef CONFIG_NF_FLOW_TABLE_PROCFS
+ int nf_flow_table_init_proc(struct net *net);
+--- a/include/net/netfilter/nf_tables.h
++++ b/include/net/netfilter/nf_tables.h
+@@ -1497,7 +1497,29 @@
+ 	MODULE_ALIAS("nft-obj-" __stringify(type))
+ 
+ #if IS_ENABLED(CONFIG_NF_TABLES)
++
++struct nftables_pernet {
++	struct list_head	tables;
++	struct list_head	commit_list;
++	struct list_head	binding_list;
++	struct list_head	module_list;
++	struct list_head	notify_list;
++	struct mutex		commit_mutex;
++	u64			table_handle;
++	u64			tstamp;
++	unsigned int		base_seq;
++	unsigned int		gc_seq;
++	u8			validate_state;
++	u8			gencursor;	/* mu5358: was struct net's nft.gencursor */
++};
+ 
++extern unsigned int nf_tables_net_id;
++
++static inline struct nftables_pernet *nft_pernet(const struct net *net)
++{
++	return net_generic(net, nf_tables_net_id);
++}
++
+ /*
+  * The gencursor defines two generations, the currently active and the
+  * next one. Objects contain a bitmask of 2 bits specifying the generations
+@@ -1512,7 +1534,7 @@
+  */
+ static inline unsigned int nft_gencursor_next(const struct net *net)
+ {
+-	return net->nft.gencursor + 1 == 1 ? 1 : 0;
++	return nft_pernet(net)->gencursor + 1 == 1 ? 1 : 0;
+ }
+ 
+ static inline u8 nft_genmask_next(const struct net *net)
+@@ -1523,7 +1545,7 @@
+ static inline u8 nft_genmask_cur(const struct net *net)
+ {
+ 	/* Use READ_ONCE() to prevent refetching the value for atomicity */
+-	return 1 << READ_ONCE(net->nft.gencursor);
++	return 1 << READ_ONCE(nft_pernet(net)->gencursor);
+ }
+ 
+ #define NFT_GENMASK_ANY		((1 << 0) | (1 << 1))
+@@ -1789,27 +1811,6 @@
+ static inline int nft_request_module(struct net *net, const char *fmt, ...) { return -ENOENT; }
+ #endif
+ 
+-struct nftables_pernet {
+-	struct list_head	tables;
+-	struct list_head	commit_list;
+-	struct list_head	binding_list;
+-	struct list_head	module_list;
+-	struct list_head	notify_list;
+-	struct mutex		commit_mutex;
+-	u64			table_handle;
+-	u64			tstamp;
+-	unsigned int		base_seq;
+-	unsigned int		gc_seq;
+-	u8			validate_state;
+-};
+-
+-extern unsigned int nf_tables_net_id;
+-
+-static inline struct nftables_pernet *nft_pernet(const struct net *net)
+-{
+-	return net_generic(net, nf_tables_net_id);
+-}
+-
+ static inline u64 nft_net_tstamp(const struct net *net)
+ {
+ 	return nft_pernet(net)->tstamp;
+--- a/include/net/netns/conntrack.h
++++ b/include/net/netns/conntrack.h
+@@ -28,9 +28,7 @@
+ 	u8 tcp_be_liberal;
+ 	u8 tcp_max_retrans;
+ 	u8 tcp_ignore_invalid_rst;
+-#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
+-	unsigned int offload_timeout;
+-#endif
++	/* mu5358: no offload_timeout (nf_tcp_offload_timeout): GKI's struct net, which holds this, has none */
+ };
+ 
+ enum udp_conntrack {
+@@ -41,9 +39,7 @@
+ 
+ struct nf_udp_net {
+ 	unsigned int timeouts[UDP_CT_MAX];
+-#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
+-	unsigned int offload_timeout;
+-#endif
++	/* mu5358: no offload_timeout (nf_udp_offload_timeout) */
+ };
+ 
+ struct nf_icmp_net {
+--- a/net/netfilter/nf_conntrack_proto.c
++++ b/net/netfilter/nf_conntrack_proto.c
+@@ -15,6 +15,13 @@
+ 
+ #include <net/netfilter/nf_conntrack.h>
+ #include <net/netfilter/nf_conntrack_l4proto.h>
++
++#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
++unsigned int nf_tcp_offload_timeout __read_mostly = 30 * HZ;
++EXPORT_SYMBOL_GPL(nf_tcp_offload_timeout);
++unsigned int nf_udp_offload_timeout __read_mostly = 30 * HZ;
++EXPORT_SYMBOL_GPL(nf_udp_offload_timeout);
++#endif
+ #include <net/netfilter/nf_conntrack_core.h>
+ #include <net/netfilter/nf_conntrack_bridge.h>
+ #include <net/netfilter/nf_log.h>
+--- a/net/netfilter/nf_conntrack_proto_tcp.c
++++ b/net/netfilter/nf_conntrack_proto_tcp.c
+@@ -1610,9 +1610,6 @@
+ 	 */
+ 	tn->tcp_max_retrans = 3;
+ 
+-#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
+-	tn->offload_timeout = 30 * HZ;
+-#endif
+ }
+ 
+ const struct nf_conntrack_l4proto nf_conntrack_l4proto_tcp =
+--- a/net/netfilter/nf_conntrack_proto_udp.c
++++ b/net/netfilter/nf_conntrack_proto_udp.c
+@@ -274,9 +274,6 @@
+ 	for (i = 0; i < UDP_CT_MAX; i++)
+ 		un->timeouts[i] = udp_timeouts[i];
+ 
+-#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
+-	un->offload_timeout = 30 * HZ;
+-#endif
+ }
+ 
+ const struct nf_conntrack_l4proto nf_conntrack_l4proto_udp =
+--- a/net/netfilter/nf_conntrack_standalone.c
++++ b/net/netfilter/nf_conntrack_standalone.c
+@@ -992,7 +992,7 @@
+ #undef XASSIGN
+ 
+ #if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
+-	table[NF_SYSCTL_CT_PROTO_TIMEOUT_TCP_OFFLOAD].data = &tn->offload_timeout;
++	table[NF_SYSCTL_CT_PROTO_TIMEOUT_TCP_OFFLOAD].data = &nf_tcp_offload_timeout;
+ #endif
+ 
+ }
+@@ -1082,7 +1082,7 @@
+ 	table[NF_SYSCTL_CT_PROTO_TIMEOUT_UDP].data = &un->timeouts[UDP_CT_UNREPLIED];
+ 	table[NF_SYSCTL_CT_PROTO_TIMEOUT_UDP_STREAM].data = &un->timeouts[UDP_CT_REPLIED];
+ #if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
+-	table[NF_SYSCTL_CT_PROTO_TIMEOUT_UDP_OFFLOAD].data = &un->offload_timeout;
++	table[NF_SYSCTL_CT_PROTO_TIMEOUT_UDP_OFFLOAD].data = &nf_udp_offload_timeout;
+ #endif
+ 
+ 	nf_conntrack_standalone_init_tcp_sysctl(net, table);
+--- a/net/netfilter/nf_flow_table_core.c
++++ b/net/netfilter/nf_flow_table_core.c
+@@ -179,7 +179,7 @@
+ 		flow_offload_fixup_tcp(&ct->proto.tcp);
+ 
+ 		timeout = tn->timeouts[ct->proto.tcp.state];
+-		timeout -= tn->offload_timeout;
++		timeout -= nf_tcp_offload_timeout;
+ 	} else if (l4num == IPPROTO_UDP) {
+ 		struct nf_udp_net *tn = nf_udp_pernet(net);
+ 		enum udp_conntrack state =
+@@ -187,7 +187,7 @@
+ 			UDP_CT_REPLIED : UDP_CT_UNREPLIED;
+ 
+ 		timeout = tn->timeouts[state];
+-		timeout -= tn->offload_timeout;
++		timeout -= nf_udp_offload_timeout;
+ 	} else {
+ 		return;
+ 	}
+@@ -256,18 +256,12 @@
+ unsigned long flow_offload_get_timeout(struct flow_offload *flow)
+ {
+ 	unsigned long timeout = NF_FLOW_TIMEOUT;
+-	struct net *net = nf_ct_net(flow->ct);
+ 	int l4num = nf_ct_protonum(flow->ct);
+ 
+-	if (l4num == IPPROTO_TCP) {
+-		struct nf_tcp_net *tn = nf_tcp_pernet(net);
+-
+-		timeout = tn->offload_timeout;
+-	} else if (l4num == IPPROTO_UDP) {
+-		struct nf_udp_net *tn = nf_udp_pernet(net);
+-
+-		timeout = tn->offload_timeout;
+-	}
++	if (l4num == IPPROTO_TCP)
++		timeout = nf_tcp_offload_timeout;
++	else if (l4num == IPPROTO_UDP)
++		timeout = nf_udp_offload_timeout;
+ 
+ 	return timeout;
+ }
+@@ -613,15 +607,14 @@
+ }
+ EXPORT_SYMBOL_GPL(nf_flow_table_free);
+ 
++/* mu5358: no statistics (nf_flow_table.h) */
+ static int nf_flow_table_init_net(struct net *net)
+ {
+-	net->ft.stat = alloc_percpu(struct nf_flow_table_stat);
+-	return net->ft.stat ? 0 : -ENOMEM;
++	return 0;
+ }
+ 
+ static void nf_flow_table_fini_net(struct net *net)
+ {
+-	free_percpu(net->ft.stat);
+ }
+ 
+ static int nf_flow_table_pernet_init(struct net *net)
+--- a/net/netfilter/nf_tables_api.c
++++ b/net/netfilter/nf_tables_api.c
+@@ -10254,7 +10254,7 @@
+ 	gc_seq = nft_gc_seq_begin(nft_net);
+ 
+ 	/* step 3. Start new generation, rules_gen_X now in use. */
+-	net->nft.gencursor = nft_gencursor_next(net);
++	nft_pernet(net)->gencursor = nft_gencursor_next(net);
+ 
+ 	list_for_each_entry_safe(trans, next, &nft_net->commit_list, list) {
+ 		nf_tables_commit_audit_collect(&adl, trans->ctx.table,
+--- a/net/netfilter/nf_tables_core.c
++++ b/net/netfilter/nf_tables_core.c
+@@ -259,7 +259,7 @@
+ 	struct nft_regs regs = {};
+ 	unsigned int stackptr = 0;
+ 	struct nft_jumpstack jumpstack[NFT_JUMP_STACK_SIZE];
+-	bool genbit = READ_ONCE(net->nft.gencursor);
++	bool genbit = READ_ONCE(nft_pernet(net)->gencursor);
+ 	struct nft_rule_blob *blob;
+ 	struct nft_traceinfo info;
+ 

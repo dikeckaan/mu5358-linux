@@ -1,0 +1,53 @@
+mmc: sdhci-sprd: accept the R11P3 host (UMS9632), bus mode limited by a parameter
+
+The UMS9632 eMMC host is "sprd,sdhci-r11p3". sdhci_sprd.r11p3_mode (hs, hs200 or hs400; default hs) caps the
+bus mode while each one is brought up; the command queue stays off.
+
+--- a/drivers/mmc/host/sdhci-sprd.c	2026-10-29 12:56:04.729517329 +0000
++++ b/drivers/mmc/host/sdhci-sprd.c	2026-10-29 13:16:51.809368121 +0000
+@@ -728,6 +728,29 @@
+ 	.ops = &sdhci_sprd_ops,
+ };
+ 
++/*
++ * R11P3 (UMS9632) bring-up: the fastest bus mode the host may use, "hs" (52 MHz SDR), "hs200" or "hs400" (what
++ * the device tree offers), until each one is known to work with this host. No command queue (the vendor driver
++ * runs its own CQE).
++ */
++static char *r11p3_mode = "hs";
++module_param(r11p3_mode, charp, 0444);
++MODULE_PARM_DESC(r11p3_mode, "R11P3 host: fastest bus mode, hs, hs200 or hs400");
++
++static void sdhci_sprd_r11p3_limit(struct platform_device *pdev, struct mmc_host *mmc)
++{
++	if (!of_device_is_compatible(pdev->dev.of_node, "sprd,sdhci-r11p3"))
++		return;
++	mmc->caps2 &= ~(MMC_CAP2_CQE | MMC_CAP2_CQE_DCMD);
++	if (strcmp(r11p3_mode, "hs400"))
++		mmc->caps2 &= ~(MMC_CAP2_HS400 | MMC_CAP2_HS400_ES);
++	if (strcmp(r11p3_mode, "hs400") && strcmp(r11p3_mode, "hs200")) {
++		mmc->caps2 &= ~MMC_CAP2_HS200;
++		mmc->caps &= ~(MMC_CAP_1_8V_DDR | MMC_CAP_3_3V_DDR | MMC_CAP_UHS);
++	}
++	dev_info(&pdev->dev, "r11p3 bring-up: up to %s (caps %#x caps2 %#x)\n", r11p3_mode, mmc->caps, mmc->caps2);
++}
++
+ static int sdhci_sprd_probe(struct platform_device *pdev)
+ {
+ 	struct sdhci_host *host;
+@@ -765,6 +788,7 @@
+ 	ret = mmc_of_parse(host->mmc);
+ 	if (ret)
+ 		return ret;
++	sdhci_sprd_r11p3_limit(pdev, host->mmc);
+ 
+ 	if (!mmc_card_is_removable(host->mmc))
+ 		host->mmc_host_ops.request_atomic = sdhci_sprd_request_atomic;
+@@ -903,6 +927,7 @@
+ 
+ static const struct of_device_id sdhci_sprd_of_match[] = {
+ 	{ .compatible = "sprd,sdhci-r11", },
++	{ .compatible = "sprd,sdhci-r11p3", },
+ 	{ }
+ };
+ MODULE_DEVICE_TABLE(of, sdhci_sprd_of_match);

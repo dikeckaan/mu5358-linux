@@ -1,0 +1,134 @@
+#!/bin/sh
+# U30 Pro: Android's modem daemons (cp_diskserver, modem_control, refnotify) in a chroot at /opt/mu5358/android.
+#
+# The chroot's /dev is a tmpfs of its own: the character devices of /dev, and no eMMC. Every by-name partition in
+# it is a loop device - the NV ones over copies in RAM, so the modem's changes to its NV are lost at reboot and
+# Linux never writes the real NV (Android stays its owner; 2026-10-29), the modem images read-only over the real
+# partitions. The daemons get Android's slot (a): Linux runs from b.
+#
+#   modem-start setup       the chroot only
+#   modem-start control     the chroot, then modem_control (which loads the CP, PM and CH)
+#   modem-start diskserver  cp_diskserver, once the CP is loaded
+#   modem-start refnotify   refnotify, once the CP is loaded
+# (/etc/init.d/mu5358-modem runs the last three as procd instances.)
+A=/opt/mu5358/android
+D=$A/dev
+N=/tmp/mu5358-nv
+# what cp_diskserver and modem_control (libnv_utils) may write: the NV and the partitions Android keeps next to it
+NV="prodnv calinv miscdata persist ztepersist nr_factorynv nr_runtimenv1 nr_runtimenv2 nr_downloadnv_a
+nr_downloadnv_b nr_deltanv_a nr_deltanv_b"
+# what modem_control loads into the CP, PM and CH (modem_*_info.xml), read-only
+RO="nr_modem_a nr_modem_b nr_phy_a nr_phy_b nr_phy_npi_a nr_phy_npi_b pm_sys_a pm_sys_b ch_sys_a ch_sys_b
+l_agdsp_a l_agdsp_b"
+say() { echo "modem-start: $*"; echo "modem-start: $*" > /dev/kmsg 2>/dev/null; }
+# OpenWrt's busybox has no losetup or truncate
+BB=/opt/mu300/bin/busybox
+losetup() { $BB losetup "$@"; }
+
+# sparse DEV FILE: the partition into FILE, its all-zero MiBs left as holes (tmpfs keeps no RAM for them: the NV
+# copies are 117 of 311 MiB on 2026-10-29)
+sparse() {
+    b=$(( $(cat /sys/class/block/${1##*/}/size) * 512 ))
+    rm -f "$2"; $BB truncate -s $b "$2" || return 1
+    i=0
+    while [ $((i * 1048576)) -lt $b ]; do
+        [ -z "$(dd if=$1 bs=1M skip=$i count=1 2>/dev/null | tr -d '\000' | head -c1)" ] ||
+            dd if=$1 of="$2" bs=1M skip=$i seek=$i count=1 conv=notrunc 2>/dev/null || return 1
+        i=$((i + 1))
+    done
+}
+
+# part NAME: the eMMC partition of that name (mmcblk0pN), nothing if none
+part() {
+    for u in /sys/class/block/mmcblk0p*/uevent; do
+        grep -q "^PARTNAME=$1\$" "$u" && { d=${u%/uevent}; echo ${d##*/}; return 0; }
+    done
+    return 1
+}
+# loop [-r] FILE NAME: FILE on a free loop device, linked as the chroot's by-name/NAME
+loop() {
+    ro=; [ "$1" = -r ] && { ro=-r; shift; }
+    l=$(losetup -f) || return 1
+    losetup $ro "$l" "$1" || return 1
+    cp -a "$l" "$D/block/${l##*/}"
+    # relative: the same node from inside the chroot and from here (the perms below)
+    ln -sfn "../${l##*/}" "$D/block/by-name/$2"
+}
+
+setup() {
+    grep -q " $D " /proc/mounts && { say "chroot already set up"; return 0; }
+    for i in $(seq 1 90); do [ -e /dev/modem ] && break; sleep 1; done
+    [ -e /dev/modem ] || { say "no /dev/modem"; return 1; }
+    mkdir -p $D $A/proc $A/sys $A/tmp $A/data/vendor $A/mnt $N
+    mount -t tmpfs -o mode=0755,size=8m chrootdev $D
+    mkdir -p $D/block/by-name $D/socket $D/pts $D/__properties__
+    # the character devices, but none that reaches memory or the eMMC (its RPMB)
+    for n in /dev/*; do
+        [ -c "$n" ] || continue
+        case ${n##*/} in mem|kmem|port|mmcblk*) continue ;; esac
+        cp -a "$n" "$D/"
+    done
+    mount --bind /dev/pts $D/pts
+    mount --bind $A/dev-properties $D/__properties__
+    for p in $NV; do
+        d=$(part $p) || { say "no partition $p"; continue; }
+        [ -s $N/$p.img ] || sparse /dev/$d $N/$p.img || { say "could not copy $p"; continue; }
+        loop $N/$p.img $p || say "no loop for $p"
+    done
+    for p in $RO; do
+        d=$(part $p) || continue
+        loop -r /dev/$d $p || say "no loop for $p"
+    done
+    # Android's owners and modes (vendor ueventd.rc), on the chroot's nodes
+    sed "s|/dev/|$D/|g" /opt/mu5358/bin/ueventd-perms.sh > /tmp/mu5358-perms.sh
+    sh /tmp/mu5358-perms.sh
+    rm -f /tmp/mu5358-perms.sh
+    mount -t proc proc $A/proc
+    mount -t sysfs sysfs $A/sys
+    # Android's slot
+    for f in bootconfig cmdline; do
+        [ -r /proc/$f ] || continue
+        sed 's/androidboot\.slot_suffix\( *= *"\{0,1\}\)_b/androidboot.slot_suffix\1_a/' /proc/$f > /tmp/mu5358-$f
+        mount --bind /tmp/mu5358-$f $A/proc/$f
+    done
+    say "chroot ready: $(ls $D/block/by-name | wc -l) partitions, NV in RAM ($(du -sk $N | cut -f1) KiB)"
+}
+
+# exec DAEMON: the daemon in the chroot, in place of this shell (sprd_modem_loader takes only a task whose comm is
+# modem_control)
+run() {
+    exec env -u LD_PRELOAD LD_LIBRARY_PATH=/apex/com.android.runtime/lib64/bionic:/system/lib64:/vendor/lib64 \
+        chroot $A /vendor/bin/$1
+}
+
+# the CP's three cores started (modem_control loaded them): cp_diskserver asks /dev/modem for the NV layout, and
+# before the load it gets none and loops on "get nv region failed" for good (2026-10-29). Android's init starts it
+# when modem_control asks, which has no property service to ask here.
+wait_loaded() {
+    for i in $(seq 1 120); do
+        dmesg | grep -q 'modem modem@2: start over' && return 0
+        sleep 1
+    done
+    say "the modem was not loaded in 120 s"
+    return 1
+}
+
+case $1 in
+    setup) setup ;;
+    control)
+        setup || exit 1
+        # nodes the vendor init's chown lines give modem_control (uid 1000 after its switchUserToSystem): EACCES on
+        # each of them without (2026-10-29)
+        for n in modem pmsys chsys cp_dump phycp; do
+            [ -e $D/$n ] && chown 1000:1000 $D/$n && chmod 0660 $D/$n
+        done
+        if [ ! -S $D/socket/logdw ] && [ -x /opt/mu300/bin/logdw ]; then
+            /opt/mu300/bin/logdw $D/socket/logdw >> /tmp/android-logcat.txt 2>&1 &
+        fi
+        run modem_control ;;
+    diskserver|refnotify)
+        wait_loaded || exit 1
+        [ $1 = diskserver ] && run cp_diskserver
+        run refnotify ;;
+    *) echo "usage: modem-start setup|control|diskserver|refnotify" >&2; exit 2 ;;
+esac

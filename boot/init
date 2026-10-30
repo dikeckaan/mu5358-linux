@@ -1,0 +1,250 @@
+#!/mu/busybox sh
+# MU5358 (ZTE U30 Pro) Linux initramfs. Adapted from mu300-linux's boot/init: the GKI 6.6 kernel and the stock
+# vendor modules, a USB gadget (NCM + ACM console), misc back to Android, then switch_root into the system on the
+# eMMC region behind userdata (ext4 labelled mu5358root). Without one it stays here with telnet on 192.168.58.1.
+#
+# This ramdisk goes into init_boot_b. LK unpacks vendor_boot's ramdisk (Android's first stage and recovery files,
+# /lib/modules) and then this one on top of it, so /init is this script and the modules are vendor_boot's. Our own
+# files live in /mu: vendor_boot's /bin and /etc are symlinks into /system, which does not exist here.
+#
+# Every stage goes to /dev/kmsg at KERN_ERR, so it survives in /sys/fs/pstore/console-ramoops-0 after the fallback
+# boot into Android.
+/mu/busybox mkdir -p /mu/bin /proc /sys /dev /run /tmp /config
+/mu/busybox --install -s /mu/bin
+export PATH=/mu/bin HOME=/ TERM=vt100
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+echo 4 > /proc/sys/kernel/printk
+# our kernel has devtmpfs (kernel/mu5358-linux.fragment); the stock GKI kernel does not: tmpfs, a few nodes by
+# hand, mdev for the rest
+if ! mount -t devtmpfs -o mode=0755 devtmpfs /dev 2>/dev/null; then
+    mount -t tmpfs -o mode=0755 tmpfs /dev
+    mknod /dev/null c 1 3
+    mknod /dev/console c 5 1
+    mknod /dev/kmsg c 1 11
+    mknod /dev/zero c 1 5
+    mknod /dev/urandom c 1 9
+    mknod /dev/random c 1 8
+fi
+mkdir -p /dev/pts
+mount -t devpts -o mode=0620,ptmxmode=0666 devpts /dev/pts
+ln -sf pts/ptmx /dev/ptmx
+mount -t tmpfs tmpfs /run
+mount -t tmpfs tmpfs /tmp
+
+# Persistent log: the stages also go to the last MiB of the Linux region behind userdata (sectors 122152960 on, up
+# to the GPT's last usable sector), so that Android can read how far a boot got: pstore was empty after the first
+# trial. Written once the eMMC is there (after the modules), and again at every stage from then on.
+LOGSEC=122152960
+log() {
+    echo "<3>MU5358-LINUX: $*" > /dev/kmsg
+    echo "$(cut -d' ' -f1 /proc/uptime) $*" >> /run/stages
+    if [ -b /dev/mmcblk0 ]; then
+        { echo "MU5358-STAGES-BEGIN"; cat /run/stages; echo "MU5358-STAGES-END"; } > /run/stages.blk
+        head -c 4096 /dev/zero >> /run/stages.blk
+        dd if=/run/stages.blk of=/dev/mmcblk0 bs=512 seek=$LOGSEC count=8 conv=notrunc,fsync 2>/dev/null
+    fi
+}
+log "stage=init-start"
+
+echo /mu/bin/mdev > /proc/sys/kernel/hotplug
+mdev -s
+log "stage=devfs-ready"
+
+# no panic_on_oops while the port is young: an oops then stays in the kernel log that the logger below keeps. GKI
+# builds it in (CONFIG_PANIC_ON_OOPS=y): a reset in the middle of the oops left no call trace (2026-10-29)
+echo 0 > /proc/sys/kernel/panic_on_oops
+echo 1 > /proc/sys/kernel/sysrq
+
+# Safety net: reboot after 5 minutes (by then misc points at Android again, below). /run/stay keeps Linux up.
+(sleep 300
+ [ -e /run/stay ] && { log "stage=timer-skipped"; exit 0; }
+ log "stage=timer-reboot"
+ sync; reboot -f; sleep 10; echo b > /proc/sysrq-trigger) &
+timer=$!
+
+# The stock vendor modules: recovery's list (recovery is the mode that has USB without Android's second stage), in
+# dependency order (/mu/module-order, made by build-initboot.py), then ours from vendor_dlkm (/mu/modules:
+# sprd_pmic_wdt feeds the PMIC watchdog that LK leaves running; without it the board resets at ~280 s). Every
+# failure is logged and skipped.
+n=0 bad=
+load() {
+    if insmod "$1" 2>/run/insmod.err; then
+        n=$((n + 1))
+    else
+        grep -q 'File exists' /run/insmod.err || bad="$bad $(basename "${1%.ko}")"
+    fi
+}
+while read -r m; do
+    [ -f "/lib/modules/$m" ] && load "/lib/modules/$m"
+done < /mu/module-order
+for m in /mu/modules/*.ko; do [ -f "$m" ] && load "$m"; done
+log "stage=modules loaded=$n failed=[${bad# }]"
+mdev -s
+
+# The screen: LK leaves its logo up with the backlight on, and nothing here draws on it. Backlight off (the
+# panel's own sprd_backlight from sprd-drm, 0..4095; bl_power 4 = FB_BLANK_POWERDOWN).
+for b in /sys/class/backlight/*; do
+    [ -e "$b/brightness" ] || continue
+    echo 0 > "$b/brightness"
+    echo 4 > "$b/bl_power" 2>/dev/null
+    log "stage=backlight-off $(basename "$b")"
+done
+
+# misc: back to Android at once, so any later reboot (the timer, a panic, the power key) goes there. LK took the
+# trial's try when it chose this slot; the block written here is the one Android had before the trial.
+misc=
+for i in $(seq 1 50); do
+    for p in /sys/class/block/mmcblk0p*; do
+        [ "$(sed -n 's/^PARTNAME=//p' "$p/uevent" 2>/dev/null)" = misc ] && misc=/dev/$(basename "$p")
+    done
+    [ -n "$misc" ] && [ -b "$misc" ] && break
+    misc=; sleep 0.2; mdev -s
+done
+if [ -n "$misc" ]; then
+    dd if=/mu/misc-bc-android.bin of="$misc" bs=1 seek=2048 count=32 conv=notrunc,fsync 2>/dev/null
+    if [ "$(dd if="$misc" bs=1 skip=2048 count=32 2>/dev/null | md5sum | cut -d' ' -f1)" = \
+         "$(md5sum < /mu/misc-bc-android.bin | cut -d' ' -f1)" ]; then
+        log "stage=misc-restored dev=$misc"
+    else
+        log "stage=misc-restore-FAILED dev=$misc"
+    fi
+else
+    log "stage=misc-not-found"
+fi
+
+# USB: NCM + ACM console in one configuration (the gadget mu300-linux uses; macOS, Linux and Windows 10+ bind it).
+# Named linux like mu300's: its OpenWrt's LAN hook (hotplug.d/iface/10-mu300-usb) re-enumerates usb_gadget/linux
+# once netifd has the LAN up, without which macOS keeps the link inactive (the first OpenWrt boot, 2026-10-29).
+mount -t configfs configfs /config
+g=/config/usb_gadget/linux
+mkdir -p "$g/strings/0x409" "$g/configs/c.1/strings/0x409" "$g/functions/ncm.usb0" "$g/functions/acm.GS0"
+echo 0x0525 > "$g/idVendor"
+echo 0xa4a1 > "$g/idProduct"
+echo 0x0200 > "$g/bcdUSB"
+echo 0x0301 > "$g/bcdDevice"
+echo 0xEF > "$g/bDeviceClass"
+echo 0x02 > "$g/bDeviceSubClass"
+echo 0x01 > "$g/bDeviceProtocol"
+serial=$(sed -n 's/.*androidboot\.serialno=\([^ ]*\).*/\1/p' /proc/bootconfig /proc/cmdline 2>/dev/null | head -1)
+echo "MU5358LINUX${serial:+-$serial}" > "$g/strings/0x409/serialnumber"
+echo Linux > "$g/strings/0x409/manufacturer"
+echo "MU5358 Linux USB Ethernet" > "$g/strings/0x409/product"
+echo "ncm + ACM console" > "$g/configs/c.1/strings/0x409/configuration"
+echo 250 > "$g/configs/c.1/MaxPower"
+echo 02:35:58:00:00:01 > "$g/functions/ncm.usb0/dev_addr"
+echo 02:35:58:00:00:02 > "$g/functions/ncm.usb0/host_addr"
+ln -s "$g/functions/ncm.usb0" "$g/configs/c.1/f1"
+ln -s "$g/functions/acm.GS0" "$g/configs/c.1/f2"
+udc=
+for i in $(seq 1 50); do
+    udc=$(ls /sys/class/udc 2>/dev/null | head -1)
+    [ -n "$udc" ] && break
+    sleep 0.2
+done
+if [ -n "$udc" ] && echo "$udc" > "$g/UDC"; then
+    log "stage=usb-bound udc=$udc"
+else
+    log "stage=usb-no-udc"
+fi
+
+ifc=$(cat "$g/functions/ncm.usb0/ifname" 2>/dev/null)
+ifc=${ifc:-usb0}
+for i in $(seq 1 25); do [ -e "/sys/class/net/$ifc" ] && break; sleep 0.2; done
+ip link set lo up
+ip addr add 127.0.0.1/8 dev lo
+ip addr add 192.168.58.1/24 dev "$ifc" && ip link set "$ifc" up
+cat > /run/udhcpd.conf <<EOF
+start 192.168.58.10
+end 192.168.58.50
+interface $ifc
+max_leases 8
+lease_file /run/udhcpd.leases
+option subnet 255.255.255.0
+option lease 600
+EOF
+touch /run/udhcpd.leases
+udhcpd /run/udhcpd.conf
+telnetd -l /mu/bin/sh
+log "stage=net-up if=$ifc ip=192.168.58.1"
+
+# a shell on the ACM console as well, for when the network does not come up
+mdev -s
+(while :; do
+    [ -c /dev/ttyGS0 ] && setsid sh -c 'echo $$ > /run/console.pid; exec sh </dev/ttyGS0 >/dev/ttyGS0 2>&1'
+    sleep 2
+done) &
+console=$!
+
+# The system: ext4 labelled mu5358root at the first 2 MiB boundary behind the last GPT partition (userdata), the
+# rule of mu300-linux's find_root_offset. Its label sits 1144 bytes in (the superblock at 1024, s_volume_name at
+# +120). Mounted through a loop device with that offset: the region is not a partition.
+root_off=
+end=0
+for p in /sys/class/block/mmcblk0p*; do
+    e=$(( $(cat "$p/start") + $(cat "$p/size") ))
+    [ $e -gt $end ] && end=$e
+done
+off=$(( (end + 4095) / 4096 * 4096 ))
+if [ "$(dd if=/dev/mmcblk0 bs=1 skip=$((off * 512 + 1144)) count=10 2>/dev/null)" = mu5358root ]; then
+    root_off=$((off * 512))
+fi
+if [ -z "$root_off" ]; then
+    log "stage=no-root (searched sector $off) - staying in the initramfs"
+    log "stage=ready"
+    while :; do sleep 3600; done
+fi
+mkdir -p /newroot
+loopdev=$(losetup -f)
+mdev -s
+losetup -o "$root_off" "$loopdev" /dev/mmcblk0
+if ! mount -t ext4 -o noatime "$loopdev" /newroot; then
+    log "stage=root-mount-FAILED loop=$loopdev offset=$root_off"
+    losetup -d "$loopdev"
+    log "stage=ready"
+    while :; do sleep 3600; done
+fi
+log "stage=root-mounted loop=$loopdev offset=$root_off"
+init=/sbin/init
+[ -x "/newroot$init" ] || init=/lib/systemd/systemd
+if [ ! -x "/newroot$init" ]; then
+    log "stage=root-has-no-init"
+    log "stage=ready"
+    while :; do sleep 3600; done
+fi
+# /mu5358-stay on the system: stay here, the system mounted at /newroot, to look at it with chroot
+if [ -e /newroot/mu5358-stay ]; then
+    log "stage=stay (/mu5358-stay) - root at /newroot"
+    log "stage=ready"
+    while :; do sleep 3600; done
+fi
+# the system starts its own DHCP and shell; the safety timer goes too (a hung system is the watchdog's)
+# the console's shell too (KILL: an interactive shell ignores TERM): left on ttyGS0, it read half of what was
+# typed to the system's login there (2026-10-29)
+kill $timer $console 2>/dev/null
+kill -KILL "$(cat /run/console.pid 2>/dev/null)" 2>/dev/null
+killall telnetd udhcpd 2>/dev/null
+log "stage=switch-root init=$init"
+# The kernel log of the system's first three minutes, every 2 s, into the persistent log's 508 KiB behind the stages
+# (the second 512 KiB are the system's own log: openwrt/customize.sh's mu5358-log):
+# a panic there left nothing in pstore or LK's minidump (2026-10-29). switch_root empties the initramfs but leaves
+# other mounts alone, so the logger runs from a busybox copy in a tmpfs of its own and writes through the
+# initramfs' /dev, which both survive under this process's (old) root.
+mkdir -p /mulog
+mount -t tmpfs -o size=4m tmpfs /mulog
+cp /mu/busybox /mulog/busybox
+(cd /; i=0; while [ $i -lt 90 ]; do
+    /mulog/busybox dmesg > /mulog/k 2>/dev/null
+    /mulog/busybox tail -c 512000 /mulog/k > /mulog/t
+    /mulog/busybox head -c 8192 /dev/zero >> /mulog/t
+    /mulog/busybox dd if=/mulog/t of=/dev/mmcblk0 bs=512 seek=$((LOGSEC + 8)) count=1016 conv=notrunc,fsync 2>/dev/null
+    i=$((i + 1)); /mulog/busybox sleep 2
+done) &
+# /etc/mu5358/kmsg-to-acm on the system: the kernel log, live, onto the USB serial console as well, for a board that
+# dies before anything reaches the eMMC (2026-10-29: a reset a few seconds into OpenWrt). /dev/kmsg is opened here,
+# before switch_root; every reader of it gets the whole log, so the system's logd misses nothing.
+if [ -e /newroot/etc/mu5358/kmsg-to-acm ] && [ -c /dev/ttyGS0 ]; then
+    /mulog/busybox cat < /dev/kmsg > /dev/ttyGS0 2>/dev/null &
+fi
+umount /config 2>/dev/null
+exec switch_root /newroot "$init"

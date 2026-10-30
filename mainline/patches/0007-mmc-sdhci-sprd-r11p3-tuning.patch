@@ -1,0 +1,316 @@
+mmc: sdhci-sprd: R11P3 (UMS9632) HS200/HS400 tuning and DLL setup, after the vendor driver
+
+The R11P3 host has no SDHCI standard tuning: sdhci_execute_tuning() times out silently (pr_debug only), returns 0
+and HS200 runs with an untuned sampling point, so every read fails. Like the Unisoc driver, sweep the DLL
+command/read delays in raw DLL steps (compensation off) over 1.5 clock periods with the tuning command, take the
+middle of the longest passing window and program it as a phase. Also: DLL phase-internal 2 instead of 3 (the
+vendor's CONFIG_MMC_SPRD_SDHCR11P3 value), a bounded wait for the end of a transfer before a reset after a data
+error (vendor workaround), and DLL registers in the register dump. Only for "sprd,sdhci-r11p3".
+
+--- a/drivers/mmc/host/sdhci-sprd.c	2026-10-29 16:37:54
++++ b/drivers/mmc/host/sdhci-sprd.c	2026-10-29 16:37:54
+@@ -5,6 +5,7 @@
+ // Copyright (C) 2018 Spreadtrum, Inc.
+ // Author: Chunyan Zhang <chunyan.zhang@unisoc.com>
+ 
++#include <linux/bitfield.h>
+ #include <linux/delay.h>
+ #include <linux/dma-mapping.h>
+ #include <linux/highmem.h>
+@@ -31,6 +32,9 @@
+ #define  SDHCI_SPRD_DLL_SEARCH_MODE	BIT(16)
+ #define  SDHCI_SPRD_DLL_INIT_COUNT	0xc00
+ #define  SDHCI_SPRD_DLL_PHASE_INTERNAL	0x3
++/* R11P3: the vendor driver's CONFIG_MMC_SPRD_SDHCR11P3 value of the same field */
++#define  SDHCI_SPRD_DLL_PHASE_MASK	GENMASK(1, 0)
++#define  SDHCI_SPRD_R11P3_DLL_PHASE	0x2
+ 
+ #define SDHCI_SPRD_REG_32_DLL_DLY	0x204
+ 
+@@ -42,7 +46,10 @@
+ 
+ #define SDHCI_SPRD_REG_32_DLL_STS0	0x210
+ #define SDHCI_SPRD_DLL_LOCKED		BIT(18)
++#define SDHCI_SPRD_DLL_COUNT_MASK	GENMASK(7, 0)
+ 
++#define SDHCI_SPRD_REG_32_DLL_STS1	0x214
++
+ #define SDHCI_SPRD_REG_32_BUSY_POSI		0x250
+ #define  SDHCI_SPRD_BIT_OUTR_CLK_AUTO_EN	BIT(25)
+ #define  SDHCI_SPRD_BIT_INNR_CLK_AUTO_EN	BIT(24)
+@@ -89,6 +96,9 @@
+ 	u32 base_rate;
+ 	int flags; /* backup of host attribute */
+ 	u32 phy_delay[MMC_TIMING_MMC_HS400 + 2];
++	bool r11p3;		/* "sprd,sdhci-r11p3" (UMS9632) */
++	u32 int_status;		/* r11p3: interrupts seen since a data error */
++	bool data_err;		/* r11p3: a data error is pending its reset */
+ };
+ 
+ enum sdhci_sprd_tuning_type {
+@@ -165,6 +175,31 @@
+ 	 * around it.
+ 	 */
+ 	if (unlikely(reg == SDHCI_SOFTWARE_RESET)) {
++		struct sdhci_sprd_host *sprd_host = TO_SPRD_HOST(host);
++
++		/*
++		 * R11P3: after a data error the controller cannot be stopped
++		 * by a software reset until the transfer ended (vendor driver:
++		 * "if send cmd with data err happened, sw reset immediately
++		 * cannot stop controller"), so wait (bounded) for the end of
++		 * the transfer first.
++		 */
++		if (sprd_host->r11p3 && sprd_host->data_err && !host->cmd) {
++			u32 end = SDHCI_INT_TIMEOUT | SDHCI_INT_DATA_TIMEOUT |
++				  SDHCI_INT_DATA_END_BIT | SDHCI_INT_DATA_END;
++			u32 sts = sprd_host->int_status;
++			int i;
++
++			for (i = 0; i < 10000 && !(sts & end); i++) {
++				sts |= readl_relaxed(host->ioaddr + SDHCI_INT_STATUS);
++				udelay(1);
++			}
++			if (!(sts & end))
++				pr_warn("%s: r11p3: transfer did not end before reset (int %#x)\n",
++					mmc_hostname(host->mmc), sts);
++		}
++		sprd_host->data_err = false;
++
+ 		if (readb_relaxed(host->ioaddr + reg) & SDHCI_HW_RESET_CARD)
+ 			val |= SDHCI_HW_RESET_CARD;
+ 	}
+@@ -256,6 +291,7 @@
+ 
+ static void sdhci_sprd_enable_phy_dll(struct sdhci_host *host)
+ {
++	struct sdhci_sprd_host *sprd_host = TO_SPRD_HOST(host);
+ 	u32 tmp;
+ 
+ 	tmp = sdhci_readl(host, SDHCI_SPRD_REG_32_DLL_CFG);
+@@ -266,7 +302,13 @@
+ 
+ 	tmp = sdhci_readl(host, SDHCI_SPRD_REG_32_DLL_CFG);
+ 	tmp |= SDHCI_SPRD_DLL_ALL_CPST_EN | SDHCI_SPRD_DLL_SEARCH_MODE |
+-		SDHCI_SPRD_DLL_INIT_COUNT | SDHCI_SPRD_DLL_PHASE_INTERNAL;
++		SDHCI_SPRD_DLL_INIT_COUNT;
++	if (sprd_host->r11p3) {
++		tmp &= ~SDHCI_SPRD_DLL_PHASE_MASK;
++		tmp |= SDHCI_SPRD_R11P3_DLL_PHASE;
++	} else {
++		tmp |= SDHCI_SPRD_DLL_PHASE_INTERNAL;
++	}
+ 	sdhci_writel(host, tmp, SDHCI_SPRD_REG_32_DLL_CFG);
+ 	/* wait 1ms */
+ 	usleep_range(1000, 1250);
+@@ -284,6 +326,11 @@
+ 			 mmc_hostname(host->mmc),
+ 			 sdhci_readl(host, SDHCI_SPRD_REG_32_DLL_STS0),
+ 			 sdhci_readl(host, SDHCI_SPRD_REG_32_DLL_CFG));
++	} else if (sprd_host->r11p3) {
++		dev_info(mmc_dev(host->mmc), "r11p3: DLL locked: cfg %#010x sts0 %#010x dly %#010x\n",
++			 sdhci_readl(host, SDHCI_SPRD_REG_32_DLL_CFG),
++			 sdhci_readl(host, SDHCI_SPRD_REG_32_DLL_STS0),
++			 sdhci_readl(host, SDHCI_SPRD_REG_32_DLL_DLY));
+ 	}
+ }
+ 
+@@ -436,9 +483,45 @@
+ 	case MMC_POWER_UP:
+ 		mmc_regulator_set_ocr(host->mmc, mmc->supply.vmmc, vdd);
+ 		break;
++	}
++}
++
++static u32 sdhci_sprd_irq(struct sdhci_host *host, u32 intmask)
++{
++	struct sdhci_sprd_host *sprd_host = TO_SPRD_HOST(host);
++
++	if (!sprd_host->r11p3)
++		return intmask;
++
++	if (sprd_host->data_err)
++		sprd_host->int_status |= intmask;
++	else if (host->data && (intmask & SDHCI_INT_DATA_MASK & SDHCI_INT_ERROR_MASK)) {
++		sprd_host->data_err = true;
++		sprd_host->int_status = intmask;
+ 	}
++
++	return intmask;
+ }
+ 
++static void sdhci_sprd_dump_vendor_regs(struct sdhci_host *host)
++{
++	struct sdhci_sprd_host *sprd_host = TO_SPRD_HOST(host);
++
++	if (!sprd_host->r11p3)
++		return;
++
++	pr_err("%s: sprd: DLL_CFG 0x%08x | DLL_DLY 0x%08x | DLY_OFFSET 0x%08x\n",
++	       mmc_hostname(host->mmc),
++	       sdhci_readl(host, SDHCI_SPRD_REG_32_DLL_CFG),
++	       sdhci_readl(host, SDHCI_SPRD_REG_32_DLL_DLY),
++	       sdhci_readl(host, SDHCI_SPRD_REG_32_DLL_DLY_OFFSET));
++	pr_err("%s: sprd: DLL_STS0 0x%08x | DLL_STS1 0x%08x | BUSY_POSI 0x%08x\n",
++	       mmc_hostname(host->mmc),
++	       sdhci_readl(host, SDHCI_SPRD_REG_32_DLL_STS0),
++	       sdhci_readl(host, SDHCI_SPRD_REG_32_DLL_STS1),
++	       sdhci_readl(host, SDHCI_SPRD_REG_32_BUSY_POSI));
++}
++
+ static const struct sdhci_ops sdhci_sprd_ops = {
+ 	.read_l = sdhci_sprd_readl,
+ 	.write_l = sdhci_sprd_writel,
+@@ -455,6 +538,8 @@
+ 	.get_max_timeout_count = sdhci_sprd_get_max_timeout_count,
+ 	.get_ro = sdhci_sprd_get_ro,
+ 	.request_done = sdhci_sprd_request_done,
++	.irq = sdhci_sprd_irq,
++	.dump_vendor_regs = sdhci_sprd_dump_vendor_regs,
+ };
+ 
+ static void sdhci_sprd_check_auto_cmd23(struct mmc_host *mmc,
+@@ -701,6 +786,132 @@
+ 	return sdhci_sprd_tuning(mmc, card, SDHCI_SPRD_TUNING_SD_HS_DATA);
+ }
+ 
++/*
++ * R11P3 (UMS9632) eMMC tuning, after the Unisoc vendor driver: this host has
++ * no SDHCI standard tuning (Execute Tuning never completes, so sdhci's own
++ * tuning silently times out and leaves an untuned sampling point). Instead,
++ * with the DLL compensation (DLL_CFG bits 27:24) off, DLL_DLY's command and
++ * positive-edge read delays are in raw DLL steps: sweep them over 1.5 clock
++ * periods sending the tuning command, take the middle of the longest window
++ * that passes (a step passes only if the same step one period later passes
++ * too), turn compensation back on and program that step as a phase in
++ * 1/256 of a period.
++ */
++static int sdhci_sprd_r11p3_execute_tuning(struct mmc_host *mmc, u32 opcode)
++{
++	struct sdhci_host *host = mmc_priv(mmc);
++	struct sdhci_sprd_host *sprd_host = TO_SPRD_HOST(host);
++	u32 *p = sprd_host->phy_delay;
++	unsigned int timing = mmc->ios.timing;
++	u32 dll_cfg, dll_sts0, dll_cnt, dll_dly, length, i;
++	int best_start = -1, best_len = 0, start = -1, len = 0, npass = 0;
++	unsigned int mid_step, phase;
++	bool hs400_tuning;
++	u8 *value, *ok;
++	int err = 0;
++
++	hs400_tuning = host->flags & SDHCI_HS400_TUNING;
++	host->flags &= ~SDHCI_HS400_TUNING;
++
++	/* HS400 is tuned in HS200; its delays then come from the device tree */
++	if (timing == MMC_TIMING_MMC_HS400)
++		return -EINVAL;
++	if (timing >= ARRAY_SIZE(sprd_host->phy_delay))
++		return -EINVAL;
++
++	sdhci_reset(host, SDHCI_RESET_CMD | SDHCI_RESET_DATA);
++
++	dll_cfg = sdhci_readl(host, SDHCI_SPRD_REG_32_DLL_CFG);
++	dll_cfg &= ~SDHCI_SPRD_CPST_EN;
++	sdhci_writel(host, dll_cfg, SDHCI_SPRD_REG_32_DLL_CFG);
++
++	dll_sts0 = sdhci_readl(host, SDHCI_SPRD_REG_32_DLL_STS0);
++	/* DLL steps per card clock period */
++	dll_cnt = (dll_sts0 & SDHCI_SPRD_DLL_COUNT_MASK) << 1;
++	length = dll_cnt * 3 / 2;
++	dev_info(mmc_dev(mmc), "r11p3 tuning: timing %u%s opcode %u clock %u: dll cfg %#010x sts0 %#010x, dll count %u, tuning length %u\n",
++		 timing, hs400_tuning ? " (for hs400)" : "", opcode, host->clock,
++		 dll_cfg, dll_sts0, dll_cnt, length);
++	if (!(dll_sts0 & SDHCI_SPRD_DLL_LOCKED) || !dll_cnt) {
++		dev_err(mmc_dev(mmc), "r11p3 tuning: DLL not locked\n");
++		err = -EIO;
++		goto out_cpst;
++	}
++
++	value = kzalloc(length + 1 + dll_cnt, GFP_KERNEL);
++	if (!value) {
++		err = -ENOMEM;
++		goto out_cpst;
++	}
++	ok = value + length + 1;
++
++	dll_dly = p[timing];
++	for (i = 0; i <= length; i++) {
++		dll_dly &= ~(SDHCI_SPRD_CMD_DLY_MASK | SDHCI_SPRD_POSRD_DLY_MASK);
++		dll_dly |= FIELD_PREP(SDHCI_SPRD_CMD_DLY_MASK, i & 0xff) |
++			   FIELD_PREP(SDHCI_SPRD_POSRD_DLY_MASK, i & 0xff);
++		sdhci_writel(host, dll_dly, SDHCI_SPRD_REG_32_DLL_DLY);
++		value[i] = !mmc_send_tuning(mmc, opcode, NULL);
++		npass += value[i];
++	}
++
++	/* one period, a step passes if it passes one period later too */
++	for (i = 0; i < dll_cnt; i++)
++		ok[i] = value[i] && (i + dll_cnt > length || value[i + dll_cnt]);
++
++	/* longest window, circular over the period */
++	for (i = 0; i < 2 * dll_cnt && best_len < dll_cnt; i++) {
++		if (ok[i % dll_cnt]) {
++			if (!len)
++				start = i;
++			len++;
++			if (len > best_len) {
++				best_len = len;
++				best_start = start;
++			}
++		} else {
++			len = 0;
++		}
++	}
++	best_len = min_t(int, best_len, dll_cnt);
++
++	{
++		char map[257];
++		u32 n = min_t(u32, length + 1, sizeof(map) - 1);
++
++		for (i = 0; i < n; i++)
++			map[i] = value[i] ? '+' : '.';
++		map[n] = 0;
++		dev_info(mmc_dev(mmc), "r11p3 tuning: steps 0..%u: %s\n", n - 1, map);
++	}
++
++	if (!best_len) {
++		dev_err(mmc_dev(mmc), "r11p3 tuning: all %u steps fail (%d single passes)\n",
++			length + 1, npass);
++		kfree(value);
++		err = -EIO;
++		goto out_cpst;
++	}
++
++	mid_step = (best_start + best_len / 2) % dll_cnt;
++	phase = mid_step * 256 / dll_cnt;
++	p[timing] &= ~(SDHCI_SPRD_CMD_DLY_MASK | SDHCI_SPRD_POSRD_DLY_MASK);
++	p[timing] |= FIELD_PREP(SDHCI_SPRD_CMD_DLY_MASK, phase) |
++		     FIELD_PREP(SDHCI_SPRD_POSRD_DLY_MASK, phase);
++
++	dev_info(mmc_dev(mmc), "r11p3 tuning: best window %d-%d (length %d of %u), step %u, phase %#04x, delay value %#010x\n",
++		 best_start % dll_cnt, (best_start + best_len - 1) % dll_cnt,
++		 best_len, dll_cnt, mid_step, phase, p[timing]);
++	kfree(value);
++
++out_cpst:
++	dll_cfg |= SDHCI_SPRD_CPST_EN;
++	sdhci_writel(host, dll_cfg, SDHCI_SPRD_REG_32_DLL_CFG);
++	sdhci_writel(host, p[timing], SDHCI_SPRD_REG_32_DLL_DLY);
++
++	return err;
++}
++
+ static void sdhci_sprd_phy_param_parse(struct sdhci_sprd_host *sprd_host,
+ 				       struct device_node *np)
+ {
+@@ -798,6 +1009,10 @@
+ 	sprd_host = TO_SPRD_HOST(host);
+ 	sdhci_sprd_phy_param_parse(sprd_host, pdev->dev.of_node);
+ 
++	sprd_host->r11p3 = of_device_is_compatible(pdev->dev.of_node, "sprd,sdhci-r11p3");
++	if (sprd_host->r11p3)
++		host->mmc_host_ops.execute_tuning = sdhci_sprd_r11p3_execute_tuning;
++
+ 	sprd_host->pinctrl = devm_pinctrl_get(&pdev->dev);
+ 	if (!IS_ERR(sprd_host->pinctrl)) {
+ 		sprd_host->pins_uhs =

@@ -1,0 +1,10 @@
+CONFIG_AS_VERSION: 180000 -> 180103
+CONFIG_CC_VERSION_TEXT: "Android (11368308, +pgo, +bolt, +lto, +mlgo, based on r510928) clang version 18.0.0 (https://android.googlesource.com/toolchain/llvm-project 477610d4d0d988e69dbc3fae4fe86bff3f07f2b5)" -> "Ubuntu clang version 18.1.3 (1ubuntu1)"
+CONFIG_CLANG_VERSION: 180000 -> 180103
+CONFIG_LLD_VERSION: 180000 -> 180103
+CONFIG_MODULE_SCMVERSION: y -> absent
+CONFIG_NETFILTER_NETLINK_OSF: n -> y
+CONFIG_NFT_REJECT_IPV4: absent -> y
+CONFIG_NFT_REJECT_IPV6: absent -> y
+CONFIG_NF_DUP_NETDEV: absent -> y
+CONFIG_UNUSED_KSYMS_WHITELIST: "abi_symbollist.raw" -> absent

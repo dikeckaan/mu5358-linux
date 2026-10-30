@@ -1,0 +1,20 @@
+#!/bin/sh
+# Run an Android (bionic) program on the Mali GPU (EGL/GLES, Vulkan: libGLES_mali.so) in the modem's chroot.
+#   gpu-run /opt/gltest [args]      (a path inside /opt/mu5358/android)
+# mali_kbase comes from vendor_dlkm (/lib/mu5358/modules; its unisoc_mm_emem and trusty are vendor_boot's); its
+# nodes go into the chroot's /dev, which modem-start made before the GPU was there.
+A=/opt/mu5358/android
+D=$A/dev
+grep -q "^mali_kbase " /proc/modules || /opt/mu300/bin/busybox insmod /lib/mu5358/modules/mali_kbase.ko || exit 1
+for i in $(seq 1 20); do [ -e /dev/mali0 ] && break; sleep 0.5 2>/dev/null || sleep 1; done
+[ -e /dev/mali0 ] || { echo "gpu-run: no /dev/mali0" >&2; exit 1; }
+[ -e $D/mali0 ] || cp -a /dev/mali0 $D/
+if [ -d /dev/dma_heap ] && [ ! -d $D/dma_heap ]; then
+	mkdir -p $D/dma_heap
+	cp -a /dev/dma_heap/* $D/dma_heap/
+fi
+[ -e /dev/ion ] && [ ! -e $D/ion ] && cp -a /dev/ion $D/
+# OpenWrt's procd preloads a library into its services that the bionic linker cannot load
+unset LD_PRELOAD
+LD_LIBRARY_PATH=/apex/com.android.runtime/lib64/bionic:/system/lib64:/vendor/lib64:/vendor/lib64/egl:/vendor/lib64/hw \
+	exec chroot $A "$@"

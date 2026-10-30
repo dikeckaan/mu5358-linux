@@ -1,0 +1,60 @@
+# What a systemd distribution and OpenWrt need from the kernel and the stock GKI config of the
+# U30 Pro lacks. Only options that add code and no fields to structures the vendor modules see: build.sh checks
+# every symbol CRC the vendor modules ask for against this build's Module.symvers.
+CONFIG_DEVTMPFS=y
+CONFIG_FHANDLE=y
+CONFIG_AUTOFS_FS=y
+CONFIG_TMPFS_POSIX_ACL=y
+CONFIG_TMPFS_XATTR=y
+# nftables for OpenWrt's fw4 (NAT, the flowtable mu300 uses), built in: kmodloader stays out of it. Its struct net
+# fields (netns_nftables, netns_ft) changed the CRC of 221 symbols the vendor modules use and the layout they were
+# built against (check-kmi.py, 2026-10-29); patches/0001 keeps them out of struct net. No flow table statistics in
+# procfs: they were what netns_ft held; the conntrack offload timeouts are global, not per namespace. Not the bridge
+# family (NETFILTER_FAMILY_BRIDGE adds hooks_bridge to struct net) nor SYNPROXY (a conntrack extension: it moves the
+# extension ids, and turns on SYN_COOKIES): fw4 uses neither.
+CONFIG_NF_TABLES=y
+CONFIG_NF_TABLES_INET=y
+CONFIG_NF_TABLES_NETDEV=y
+CONFIG_NF_TABLES_IPV4=y
+CONFIG_NF_TABLES_IPV6=y
+CONFIG_NF_TABLES_ARP=y
+CONFIG_NFT_NUMGEN=y
+CONFIG_NFT_CT=y
+CONFIG_NFT_FLOW_OFFLOAD=y
+CONFIG_NFT_CONNLIMIT=y
+CONFIG_NFT_LOG=y
+CONFIG_NFT_LIMIT=y
+CONFIG_NFT_MASQ=y
+CONFIG_NFT_REDIR=y
+CONFIG_NFT_NAT=y
+CONFIG_NFT_TUNNEL=y
+CONFIG_NFT_QUEUE=y
+CONFIG_NFT_QUOTA=y
+CONFIG_NFT_REJECT=y
+CONFIG_NFT_REJECT_INET=y
+CONFIG_NFT_COMPAT=y
+CONFIG_NFT_HASH=y
+CONFIG_NFT_FIB=y
+CONFIG_NFT_FIB_INET=y
+CONFIG_NFT_FIB_IPV4=y
+CONFIG_NFT_FIB_IPV6=y
+CONFIG_NFT_SOCKET=y
+CONFIG_NFT_OSF=y
+CONFIG_NFT_TPROXY=y
+CONFIG_NFT_DUP_IPV4=y
+CONFIG_NFT_DUP_IPV6=y
+CONFIG_NFT_DUP_NETDEV=y
+CONFIG_NFT_FWD_NETDEV=y
+CONFIG_NFT_FIB_NETDEV=y
+CONFIG_NFT_REJECT_NETDEV=y
+CONFIG_NF_FLOW_TABLE=y
+CONFIG_NF_FLOW_TABLE_INET=y
+# CONFIG_NF_FLOW_TABLE_PROCFS is not set
+CONFIG_NF_LOG_SYSLOG=y
+# OpenWrt's netifd sets IFLA_BR_VLAN_FILTERING on every bridge it makes; without this the kernel answers
+# EOPNOTSUPP and br-lan is never made (DEVICE_CLAIM_FAILED, the first OpenWrt boot on 2026-10-29)
+CONFIG_BRIDGE_VLAN_FILTERING=y
+# every exported symbol stays exported (the stock build trims them to its ABI list)
+# CONFIG_TRIM_UNUSED_KSYMS is not set
+# CONFIG_LOCALVERSION_AUTO is not set
+CONFIG_LOCALVERSION="-android15-8-mu5358-4k"

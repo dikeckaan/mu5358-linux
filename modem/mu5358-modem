@@ -1,0 +1,22 @@
+#!/bin/sh /etc/rc.common
+# U30 Pro: Android's modem daemons in their chroot (/opt/mu5358/bin/modem-start): modem_control loads the CP,
+# cp_diskserver serves its NV from RAM copies, refnotify its time. Before mu300-atd (S19), which waits for the AT ttys.
+START=15
+USE_PROCD=1
+
+start_service() {
+	procd_open_instance control
+	procd_set_param command /opt/mu5358/bin/modem-start control
+	procd_set_param respawn 3600 10 5
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_close_instance
+	procd_open_instance diskserver
+	procd_set_param command /opt/mu5358/bin/modem-start diskserver
+	procd_set_param respawn 3600 10 5
+	procd_close_instance
+	procd_open_instance refnotify
+	procd_set_param command /opt/mu5358/bin/modem-start refnotify
+	procd_set_param respawn 3600 10 5
+	procd_close_instance
+}

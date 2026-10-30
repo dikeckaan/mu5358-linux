@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var t=localStorage.getItem("mu5358-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<title>MU5358 Linux: ZTE U30 Pro 5G hotspot üzerinde OpenWrt</title>
+<meta name="description" content="ZTE U30 Pro (MU5358, Unisoc UMS9632) 5G hotspot üzerinde Android'in yanında OpenWrt; yuvarlak ekranı kontrol paneli. Çalışan bir araştırma portu, henüz kurulum programı yok.">
+<link rel="canonical" href="https://kaandikec.com/mu5358-linux/tr/">
+<link rel="alternate" hreflang="en" href="https://kaandikec.com/mu5358-linux/">
+<link rel="alternate" hreflang="tr" href="https://kaandikec.com/mu5358-linux/tr/">
+<link rel="alternate" hreflang="x-default" href="https://kaandikec.com/mu5358-linux/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="MU5358 Linux">
+<meta property="og:title" content="MU5358 Linux: ZTE U30 Pro üzerinde OpenWrt">
+<meta property="og:description" content="ZTE U30 Pro (UMS9632) üzerinde Android'in yanında OpenWrt; yuvarlak ekranı kontrol paneli. Çalışan bir araştırma portu.">
+<meta property="og:url" content="https://kaandikec.com/mu5358-linux/tr/">
+<meta property="og:image" content="https://kaandikec.com/mu5358-linux/assets/img/ui-home.png">
+<meta name="theme-color" content="#f3f6fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&amp;display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#content">İçeriğe geç</a>
+<header class="site-header">
+<div class="wrap">
+<a class="brand" href="./"><svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="26" fill="none" stroke="currentColor" stroke-width="4"/><circle cx="32" cy="15" r="5" fill="#2259d6"/><circle cx="49" cy="32" r="5" fill="#f2b23a"/><circle cx="32" cy="49" r="5" fill="#3fae6a"/><circle cx="15" cy="32" r="5" fill="currentColor"/><circle cx="32" cy="32" r="7" fill="none" stroke="#f2b23a" stroke-width="3.5"/></svg>MU5358 Linux</a>
+<nav class="site-nav" id="site-nav" aria-label="Ana menü">
+<a href="#works">Neler çalışıyor</a>
+<a href="#screen">Ekran</a>
+<a href="#how">Nasıl açılıyor</a>
+<a href="#build">Derleme</a>
+<a href="https://github.com/dikeckaan/mu5358-linux">GitHub</a>
+<span class="langs" role="group" aria-label="Dil"><a href="../" hreflang="en" lang="en">English</a><a href="./" hreflang="tr" lang="tr" aria-current="true">Türkçe</a></span>
+</nav>
+<button class="theme-btn" type="button" hidden data-labels="Tema|Otomatik|Açık|Koyu|sistem ayarını izler|Renk temasını değiştir"><svg class="i-auto" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg><svg class="i-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><svg class="i-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="theme-name"></span></button>
+<button class="menu-btn" type="button" aria-expanded="false" aria-controls="site-nav">Menü</button>
+</div>
+</header>
+<main id="content">
+
+<section class="hero">
+<div class="wrap">
+<div>
+<h1>U30 Pro, kendi ekranı olan bir Linux router</h1>
+<p class="lede">ZTE U30 Pro (MU5358, Unisoc UMS9632) üzerinde Android'in yanında <strong>OpenWrt</strong>. Mobil veri,
+Wi-Fi 6 hotspot, USB üzerinden SSH ve hotspot'un yuvarlak ekranında, Android launcher'ına benzeyen hafif bir kontrol
+paneli. Android yerinde kalıyor; her yeniden başlatmada cihaz kendiliğinden ona dönüyor.</p>
+<div class="actions">
+<a class="btn primary" href="#status">Önce durumu oku</a>
+<a class="btn" href="https://github.com/dikeckaan/mu5358-linux">GitHub'da kaynak kod</a>
+<a class="btn sponsor" href="https://github.com/sponsors/dikeckaan"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path fill="currentColor" d="M8 14.2 6.9 13.2C3 9.7.5 7.4.5 4.6.5 2.4 2.2.7 4.4.7c1.2 0 2.4.6 3.1 1.5C8.2 1.3 9.4.7 10.6.7c2.2 0 3.9 1.7 3.9 3.9 0 2.8-2.5 5.1-6.4 8.6z"/></svg>Destek ol</a>
+</div>
+<p class="sponsor-note"><a href="https://kaandikec.com/mu300-linux/tr/">MU300 Linux</a>'un (ZTE F50 ve U30 Air) kardeş projesi; Türkiye'de aynı tek kişinin işi.</p>
+</div>
+<img class="hero-shot" src="../assets/img/ui-home.png" width="240" height="240" alt="Linux altında U30 Pro'nun ana ekranı: ortada pil halkalı bir saat, çevresinde dört yuvarlak yaprak (WiFi, Mesaj, Pil, Ayar)">
+</div>
+</section>
+
+<section>
+<div class="wrap prose">
+
+<h2 id="status">Durum: çalışan bir araştırma portu</h2>
+<div class="callout warn"><strong>Henüz kurulum programı ve sürüm yok.</strong> Buradaki her şey root'lu tek bir
+cihazda, repodaki betiklerle elle ayağa kaldırıldı ve test edildi. Çalışma görünsün ve başkaları takip edebilsin diye
+yayınlandı. adb, Magisk root, bölümler ve seri konsol sana yabancıysa kurulum programını bekle.</div>
+<p>Şimdiden iyi yaptığı şeyler: 3 saatlik testte her kontrol yeşil geçti (USB, şebeke kaydı, mobil veri, ping,
+Wi-Fi). Çekirdek hatası çıkmadı, NV bölümleri bayt bayt aynı kaldı, bellek kullanımı sabit seyretti. Art arda altı
+yeniden başlatmada her şey kendiliğinden geldi.</p>
+
+<h2 id="works">Neler çalışıyor</h2>
+<ul class="dots">
+<li><strong>Mobil veri (LTE)</strong>Android'in kendi modem servisleri bir chroot'ta, MU300 Linux'taki gibi. Android'in 11-12 Mbit/s verdiği yerde 14-19 Mbit/s.</li>
+<li><strong>Wi-Fi 6 hotspot</strong>AIC8800D80X2, 5 GHz, HE80, WPA2; kartın kendi MAC adresi ve kalibrasyonu ile.</li>
+<li><strong>Ekran</strong>U30 launcher'ının görünümünde bir kontrol paneli: durum, katılmak için karekodlu Wi-Fi, SMS, pil, ayarlar, istemciler, sinyal, güç işlemleri, sistem ve log. 1,5 MB, yaklaşık 6 MB RAM.</li>
+<li><strong>Tuşlar</strong>Güç: kısa basış ekranı açar/kapatır, basılı tutunca kapatır. Wi-Fi tuşu basılı tutulunca hotspot'u kapatır/açar.</li>
+<li><strong>USB ağı ve SSH</strong>Bilgisayara tak: <code>ssh root@192.168.58.1</code>; ayrıca bir seri konsol.</li>
+<li><strong>GPU</strong>Android'in sürücüsüyle Mali-G57: OpenGL ES 3.2, EGL 1.5 ve Vulkan; gerektiğinde yükleniyor.</li>
+<li class="g"><strong>Android yerinde kalıyor</strong>Linux her zaman tek seferlik bir deneme olarak açılıyor. Yeniden başlatma, kapatma, bir çekirdek hatası ya da başarısız açılış, hepsi Android'e dönüyor.</li>
+<li class="r"><strong>Henüz yok</strong>Uyku ve güç tasarrufu, %100'ün altında şarjın doğrulanması, uzun süre yalnız pille çalışma, Bluetooth, NFC, SIM yuvası algılama, USB OTG, arama ve ses, SMS gönderme, OpenCL.</li>
+</ul>
+
+<h2 id="screen">Ekran</h2>
+<p>U30 Pro'nun 240×240 yuvarlak bir ekranı ve dokunmatiği var. Linux altında bu ekranda <code>u30ui</code> çalışıyor;
+C ile yazıldı ve doğrudan çekirdeğin DRM arayüzüne çiziyor. U30'un Android launcher'ındaki yapraklar, renkler ve
+sayfalar aynı, ama Android yok. Açılışta kilitli (açmak için basılı tut), bir dakika sonra kararıyor, güç tuşuyla
+yeniden açılıyor. Aşağıdaki görüntüler örnek verilerle bilgisayarda alınmış önizlemeler.</p>
+<ul class="shots">
+<li><figure><img src="../assets/img/ui-home-locked.png" width="240" height="240" alt="Asma kilitli kilitli ana ekran" loading="lazy"><figcaption>Kilitli (açmak için basılı tut)</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui-status.png" width="240" height="240" alt="Durum sayfası: operatör, sinyal çubukları, indirme ve yükleme hızı, pil ve istemci sayısı" loading="lazy"><figcaption>Durum</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui-wifi.png" width="240" height="240" alt="Wi-Fi sayfası: ağ adı, parola ve bağlı cihazlar" loading="lazy"><figcaption>Wi-Fi</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui-wifi-qr.png" width="240" height="240" alt="Telefon kamerasıyla hotspot'a katılmak için karekod" loading="lazy"><figcaption>Karekodla katıl</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui-sms.png" width="240" height="240" alt="İki SMS içeren mesajlar sayfası" loading="lazy"><figcaption>SMS</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui-battery.png" width="240" height="240" alt="Pil sayfası: yüzde 87'de bir halka, akım, voltaj ve sıcaklık" loading="lazy"><figcaption>Pil</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui-settings.png" width="240" height="240" alt="Ayarlar: ekran zaman aşımı, kilit, hotspot, mobil veri" loading="lazy"><figcaption>Ayarlar</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui-signal.png" width="240" height="240" alt="Sinyal sayfası: RSRP, RSRQ, WAN adresi ve trafik" loading="lazy"><figcaption>Sinyal</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui-actions.png" width="240" height="240" alt="Güç işlemleri: yeniden başlat, kapat, veriyi kes, ekranı kapat; her biri bir saniye basılı tutma istiyor" loading="lazy"><figcaption>Güç işlemleri</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui-system.png" width="240" height="240" alt="Sistem sayfası: CPU, RAM, depolama, çalışma süresi ve SoC sıcaklığı" loading="lazy"><figcaption>Sistem</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui-clients.png" width="240" height="240" alt="İstemciler sayfası: bağlı cihazlar ve adresleri" loading="lazy"><figcaption>İstemciler</figcaption></figure></li>
+<li><figure><img src="../assets/img/ui-sms-open.png" width="240" height="240" alt="Tam olarak açılmış bir SMS" loading="lazy"><figcaption>Açılmış bir mesaj</figcaption></figure></li>
+</ul>
+<p>Anlatmaya değer bir ayrıntı: panel baş aşağı takılı. Görüntüyü CPU'da çevirince satırlar panele kendi tarama
+yönünün tersinden gidiyordu ve hareket eden her kare yırtılıyordu. Artık görüntüyü panel kendisi çeviriyor (MADCTL
+yazmacı, küçük bir çekirdek modülüyle ayarlanıyor) ve yırtılma yok.</p>
+
+<h2 id="how">Nasıl açılıyor</h2>
+<ol class="steps">
+<li><h3>Android bir kerelik slot b ister</h3><p>Root'lu Android, <code>misc</code> bölümüne tek seferlik bir "slot b'yi dene" isteği yazar.</p></li>
+<li><h3>LK slot b'yi başlatır</h3><p>Kartın kendi GKI 6.6 çekirdeği, küçük bir ekle yeniden derlenmiş hali, bizim <code>init_boot_b</code> ramdisk'imizle.</p></li>
+<li><h3>Ramdisk hemen geri alır</h3><p>Vendor modüllerini yükler, USB'yi açar ve 1,6. saniyede, bir şey ters gitmeden önce <code>misc</code>'i Android'e geri çevirir.</p></li>
+<li><h3>OpenWrt başlar</h3><p>eMMC'de <code>userdata</code>'nın arkasındaki kendi alanından. Modem NV bölümlerini yalnızca RAM'deki kopyalar olarak görür; gerçek NV'ye hiç yazılmaz.</p></li>
+</ol>
+<p>Slot a'ya ve NV bölümlerine hiç yazılmaz. Her yeniden başlatma, kapatma, çekirdek hatası (çekirdek böyle bir
+hatada kendini yeniden başlatır) ya da başarısız açılış Android'de biter.</p>
+
+<h2 id="build">Derleme</h2>
+<p>Çalışmayı takip etmek isteyenler için. Her adım Docker ve adb olan bir bilgisayardan, root'lu bir U30 Pro'ya karşı,
+tam yedekten sonra yapılır.</p>
+<ol>
+<li><strong>Her şeyi yedekle</strong>: <code>tools/backup-full.sh OUTDIR</code> (her bölüm, cihazda alınan özetlerle karşılaştırılarak).</li>
+<li><strong>Çekirdek</strong>: <code>kernel/Dockerfile</code>'ın konteynerinde <code>kernel/build.sh</code> (cihazın kendi commit'indeki GKI android15-6.6, artı <code>kernel/mu5358-linux.fragment</code>).</li>
+<li><strong>Boot imajları</strong>: <code>boot/build-initboot.py</code>, stok imajlardan ve <code>boot/init</code>'ten <code>init_boot_b</code>'yi (ve <code>boot_b</code>'yi) üretir.</li>
+<li><strong>Kök dosya sistemi</strong>: MU300 Linux'un OpenWrt sürümünden <code>openwrt/build-rootfs.sh</code>; <code>openwrt/customize.sh</code> onu bu karta uyarlar.</li>
+<li><strong>Android'in dosyaları</strong> (modem servisleri, firmware, GPU sürücüsü): <code>modem/</code> ve <code>gpu/</code> içindeki betikler senin cihazından çeker. Repoda yoklar.</li>
+</ol>
+<p>Sistemin çalışırkenki hali (servisler, donanım durumu, bilinen davranışlar, logların yeri)
+<a href="https://github.com/dikeckaan/mu5358-linux/blob/main/docs/GKI-SYSTEM.md">docs/GKI-SYSTEM.md</a> dosyasında.</p>
+
+<h2 id="faq">Sık sorulanlar</h2>
+<details class="faq"><summary>MU300 Linux ile aynı mı?</summary><div><p>MU300 Linux'un OpenWrt'si ve modem araçları
+üzerine kurulu. Ama U30 Pro farklı bir çip (UMS9632), farklı bir Wi-Fi çipi, bir ekran ve dokunmatik, ve GKI
+çekirdekli daha yeni bir Android (15) demek. Bu yüzden çekirdek tarafı, açılış yolu, modemin NV düzeni, Wi-Fi ve
+ekrandaki her şey yeni. MU300 Linux U30 Pro'yu desteklemiyor.</p></div></details>
+<details class="faq"><summary>Cihazımı bozabilir mi?</summary><div><p>Proje slot a'ya ve NV bölümlerine hiç yazmaz,
+Linux da hiçbir zaman varsayılan açılış yapılmaz. Yine de root'lu bir cihazda bölüm yazmak hiçbir zaman risksiz
+değildir; ilk adımın tam yedek olması bu yüzden.</p></div></details>
+<details class="faq"><summary>Neden Ubuntu değil de OpenWrt?</summary><div><p>Hafif (bütün sistem boştayken birkaç
+düzine MB kullanıyor), öncelikle bir router ve MU300 Linux'un OpenWrt'si modem araçlarını zaten getiriyor. Ubuntu
+sonra gelebilir.</p></div></details>
+<details class="faq"><summary>Kurulum programı ne zaman?</summary><div><p>Yalnız pille çalışma ve şarj doğrulanıp
+24 saatlik test geçtikten sonra. Haberler için repoyu takip et.</p></div></details>
+
+</div>
+</section>
+</main>
+<footer class="site-footer">
+<div class="wrap">
+<div>
+<h2>Proje</h2>
+<ul>
+<li><a href="https://github.com/dikeckaan/mu5358-linux">GitHub'da kaynak kod</a></li>
+<li><a href="https://github.com/sponsors/dikeckaan">Projeye destek ol</a></li>
+<li><a href="https://kaandikec.com/mu300-linux/tr/">MU300 Linux (ZTE F50, U30 Air)</a></li>
+</ul>
+</div>
+<div>
+<h2>Yardım</h2>
+<ul>
+<li><a href="https://github.com/dikeckaan/mu5358-linux/issues">Sorun bildir</a></li>
+<li><a href="https://t.me/mu300project">Telegram kanalı (haberler)</a></li>
+</ul>
+</div>
+<div>
+<p>Bir hobi projesi; risk sana ait, garanti yok. ZTE, Unisoc ya da herhangi bir operatör tarafından desteklenmez. Betikler ve belgeler: MIT; çekirdek modülleri ve yamaları: GPL-2.0.</p>
+</div>
+</div>
+</footer>
+</body>
+</html>

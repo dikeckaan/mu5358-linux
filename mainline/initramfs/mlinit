@@ -1,0 +1,94 @@
+#!/mlbin/busybox sh
+# Mainline bring-up init (built into the kernel, rdinit=/mlinit): checks the eMMC read-only and logs to the kernel
+# log, which reaches Android through the minidump (patches/0003). It writes nothing to any disk, then idles until
+# the PMIC watchdog resets the board.
+B=/mlbin/busybox
+$B mkdir -p /proc /sys /dev /tmp
+$B mount -t proc proc /proc
+$B mount -t sysfs sysfs /sys
+$B mount -t devtmpfs devtmpfs /dev 2>/dev/null
+$B mkdir -p /sys/kernel/debug; $B mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null
+log() { echo "ML: $*" > /dev/kmsg; }
+log "start $($B uname -r)"
+i=0
+while [ ! -b /dev/mmcblk0 ] && [ $i -lt 30 ]; do $B sleep 1; i=$((i + 1)); done
+if [ ! -b /dev/mmcblk0 ]; then
+    log "no mmcblk0 after ${i}s"
+else
+    log "mmcblk0 after ${i}s: $($B cat /sys/block/mmcblk0/size) sectors, $($B ls /sys/block/mmcblk0 | $B grep -c '^mmcblk0p') partitions"
+    for f in ios clock; do [ -e /sys/kernel/debug/mmc0/$f ] && log "$f: $($B cat /sys/kernel/debug/mmc0/$f | $B tr -s '\n\t' '  ')"; done
+    # sha256 of static partitions against the backup of 2026-10-29 (unchanged since)
+    for e in "p58 vbmeta_a cb4435bc56bdfbd755c68f888a0c821584e616ba3ff606698bb96ab9fccc085c" \
+             "p52 dtbo_a 171f6a2c6aeba8ea0b2c38c00ecd1fca33345c73c711d4562d30d6887f5ceea4" \
+             "p9 uboot_a 194c95461ef92e609a90aa5ec3cdfcdc4172bcf627aa1b4fdf337564ab71ba1c" \
+             "p44 boot_a f5a8c6a77975d98d03cadad32a312e4121bb27e497e959eadd2ef216f2326b92"; do
+        set -- $e
+        t0=$($B cut -d' ' -f1 /proc/uptime)
+        got=$($B sha256sum /dev/mmcblk0$1 2>&1 | $B cut -d' ' -f1)
+        t1=$($B cut -d' ' -f1 /proc/uptime)
+        [ "$got" = "$3" ] && r=OK || r="BAD $got"
+        log "$2 ($1): $r in $t0..$t1 s"
+    done
+    # the first write test: only the persistent log area (sectors 122152960.., the last MiB of the Linux area,
+    # outside every partition; boot/init's LOGSEC). A pattern, written with fsync, read back past the page cache
+    L=122152960
+    if [ "$($B cat /sys/block/mmcblk0/size)" = 122159104 ]; then
+        $B dd if=/dev/urandom of=/tmp/pat bs=1024 count=1024 2>/dev/null
+        want=$($B sha256sum /tmp/pat | $B cut -d' ' -f1)
+        t0=$($B cut -d' ' -f1 /proc/uptime)
+        $B dd if=/tmp/pat of=/dev/mmcblk0 bs=512 seek=$L count=2048 conv=fsync 2>/dev/null
+        t1=$($B cut -d' ' -f1 /proc/uptime)
+        echo 3 > /proc/sys/vm/drop_caches
+        got=$($B dd if=/dev/mmcblk0 bs=512 skip=$L count=2048 iflag=direct 2>/dev/null | $B sha256sum | $B cut -d' ' -f1)
+        [ "$got" = "$want" ] && r=OK || r="BAD $got"
+        log "write test at $L: $r (write $t0..$t1 s)"
+        # and the log there, readable from Android like boot/init's
+        echo "MU5358-MAINLINE $($B uname -r) eMMC write test $r" | $B dd of=/dev/mmcblk0 bs=512 seek=$L conv=fsync 2>/dev/null
+    else
+        log "write test skipped: unexpected disk size"
+    fi
+fi
+# USB: the MUSB glue (patches/0006), an NCM + ACM gadget as boot/init's (usb_gadget/linux, 192.168.58.1), DHCP and
+# telnet, and a shell on the ACM console
+$B mkdir -p /config /run /dev/pts
+$B mount -t configfs configfs /config 2>/dev/null
+$B mount -t devpts devpts /dev/pts 2>/dev/null
+log "udc: $($B ls /sys/class/udc 2>&1 | $B tr '\n' ' ')"
+g=/config/usb_gadget/linux
+if [ -d /config/usb_gadget ]; then
+    $B mkdir -p $g/strings/0x409 $g/configs/c.1/strings/0x409 $g/functions/ncm.usb0 $g/functions/acm.GS0
+    echo 0x0525 > $g/idVendor; echo 0xa4a1 > $g/idProduct; echo 0x0200 > $g/bcdUSB
+    echo 0xEF > $g/bDeviceClass; echo 0x02 > $g/bDeviceSubClass; echo 0x01 > $g/bDeviceProtocol
+    echo MU5358MAINLINE > $g/strings/0x409/serialnumber
+    echo Linux > $g/strings/0x409/manufacturer
+    echo "MU5358 mainline USB Ethernet" > $g/strings/0x409/product
+    echo "ncm + ACM console" > $g/configs/c.1/strings/0x409/configuration
+    echo 250 > $g/configs/c.1/MaxPower
+    echo 02:35:58:00:00:01 > $g/functions/ncm.usb0/dev_addr
+    echo 02:35:58:00:00:02 > $g/functions/ncm.usb0/host_addr
+    $B ln -s $g/functions/ncm.usb0 $g/configs/c.1/f1
+    $B ln -s $g/functions/acm.GS0 $g/configs/c.1/f2
+    udc=
+    for i in $($B seq 1 50); do udc=$($B ls /sys/class/udc 2>/dev/null | $B head -1); [ -n "$udc" ] && break; $B sleep 0.2; done
+    if [ -n "$udc" ] && echo $udc > $g/UDC; then log "usb bound to $udc"; else log "usb: no udc"; fi
+    # what still waits for what (ml12): the driver core's list, and who the PHY and the glue drivers have bound
+    log "deferred: $($B cat /sys/kernel/debug/devices_deferred 2>&1 | $B tr '\t\n' ' |')"
+    for d in sprd-ums9632-phy musb-sprd musb-hdrc; do
+        log "driver $d: $($B ls /sys/bus/platform/drivers/$d 2>&1 | $B tr '\n' ' ')"
+    done
+    ifc=$($B cat $g/functions/ncm.usb0/ifname 2>/dev/null); ifc=${ifc:-usb0}
+    for i in $($B seq 1 25); do [ -e /sys/class/net/$ifc ] && break; $B sleep 0.2; done
+    $B ip link set lo up
+    $B ip addr add 192.168.58.1/24 dev $ifc && $B ip link set $ifc up && log "net: $ifc 192.168.58.1"
+    printf 'start 192.168.58.10\nend 192.168.58.50\ninterface %s\nmax_leases 8\nlease_file /run/udhcpd.leases\noption subnet 255.255.255.0\noption lease 600\n' $ifc > /run/udhcpd.conf
+    : > /run/udhcpd.leases
+    $B udhcpd /run/udhcpd.conf && log "udhcpd up"
+    $B telnetd -l /mlbin/sh && log "telnetd up"
+    $B ln -sf busybox /mlbin/sh
+    $B mdev -s 2>/dev/null
+    ( while :; do [ -c /dev/ttyGS0 ] && $B setsid /mlbin/sh -c 'exec /mlbin/sh </dev/ttyGS0 >/dev/ttyGS0 2>&1'; $B sleep 2; done ) &
+    # what the controller did, every 10 s
+    ( while :; do $B sleep 10; log "usb state: $($B cat /sys/class/udc/*/state 2>/dev/null) $($B cat /sys/class/net/$ifc/operstate 2>/dev/null) rx $($B cat /sys/class/net/$ifc/statistics/rx_packets 2>/dev/null)"; done ) &
+fi
+log "done"
+while :; do $B sleep 3600; done

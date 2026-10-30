@@ -1,0 +1,33 @@
+# device dumps, backups, proprietary Android files and build outputs never belong in this repository
+work/
+backup/
+.claude/
+.DS_Store
+__pycache__/
+*.img
+*.bin
+*.elf
+*.tar
+*.tar.gz
+*.tgz
+*.ko
+*.o
+*.mod
+*.mod.c
+*.cmd
+modules.order
+Module.symvers
+!kernel/Module.symvers
+*.log
+# built from this repository's sources
+tools/u30ui/u30ui
+tools/screencon/screencon
+tools/f2fs-shrink
+gpu/cltest
+gpu/gltest
+mainline/out/
+mainline/initramfs/busybox
+_site/
+# notes written for the owner, not for the repository
+docs/RAPOR-*.md
+.playwright-mcp/

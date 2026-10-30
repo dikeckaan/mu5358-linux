@@ -1,0 +1,31 @@
+usb: musb: sprd: wait for the PHY; phy: sprd-ums9632: say when it is registered
+
+ml10 (2026-10-29): the glue gave up on the PHY at the end of the initcalls, took the PHY's reset lines and the
+PHY then failed with EBUSY. The glue now waits for the PHY whenever its node exists.
+
+--- a/drivers/usb/musb/musb_sprd.c	2026-10-29 14:12:01.049398853 +0000
++++ b/drivers/usb/musb/musb_sprd.c	2026-10-29 14:12:01.098072692 +0000
+@@ -185,7 +185,13 @@
+ 	}
+ 
+ 	/* a usb_phy, as the vendor PHY drivers are; musb keeps its OTG state in the PHY's otg, so it must have one */
++	/*
++	 * The PHY is waited for as long as it takes: without it the controller never sees a session, and taking the
++	 * resets in its place keeps the PHY driver from probing at all (EBUSY, ml10 2026-10-29).
++	 */
+ 	glue->xceiv = devm_usb_get_phy_by_phandle(dev, "usb-phy", 0);
++	if (glue->xceiv == ERR_PTR(-EPROBE_DEFER))
++		return dev_err_probe(dev, -EPROBE_DEFER, "waiting for the usb-phy\n");
+ 	if (IS_ERR(glue->xceiv)) {
+ 		ret = sprd_musb_skip(dev, PTR_ERR(glue->xceiv), "usb-phy");
+ 		if (ret)
+--- a/drivers/usb/phy/phy-sprd-ums9632.c	2026-10-29 14:12:01.058718679 +0000
++++ b/drivers/usb/phy/phy-sprd-ums9632.c	2026-10-29 14:12:01.098904233 +0000
+@@ -317,6 +317,7 @@
+ 	if (ret)
+ 		return dev_err_probe(dev, ret, "cannot add the usb_phy\n");
+ 
++	dev_info(dev, "registered\n");
+ 	return 0;
+ }
+ 

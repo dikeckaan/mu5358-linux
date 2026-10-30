@@ -1,0 +1,27 @@
+phy: sprd-ums9632: do without the Type-C extcon for now
+
+ml12 (2026-10-29): usb_add_phy_dev returned -EPROBE_DEFER for good. LK's dtbo gives the PHY extcon = the PMIC's
+Type-C block (pmic@1/typec@380, "sprd,ump9651-typec"), which no mainline driver provides (and the UMP9651 MFD is
+not ported). Peripheral mode does not need it: the PHY forces VBUS valid. The property goes until there is one.
+
+--- a/drivers/usb/phy/phy-sprd-ums9632.c
++++ b/drivers/usb/phy/phy-sprd-ums9632.c
+@@ -313,6 +313,18 @@
+ 
+ 	platform_set_drvdata(pdev, p);
+ 
++	/* the Type-C extcon has no driver yet (see above): usb_add_phy_dev would wait for it for ever */
++	{
++		struct property *prop = of_find_property(dev->of_node, "extcon", NULL);
++
++		if (prop) {
++			ret = of_remove_property(dev->of_node, prop);
++			dev_info(dev, "no Type-C extcon driver: extcon dropped (%d)\n", ret);
++			if (ret)
++				return ret;
++		}
++	}
++
+ 	dev_info(dev, "usb_add_phy_dev...\n");
+ 	ret = usb_add_phy_dev(&p->phy);
+ 	dev_info(dev, "usb_add_phy_dev: %d\n", ret);

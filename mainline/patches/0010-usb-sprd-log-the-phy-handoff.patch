@@ -1,0 +1,27 @@
+usb: sprd: log the PHY hand-off (bring-up instrumentation)
+
+ml11 (2026-10-29): the PHY probed five times, never said "registered", and the glue kept waiting. Both sides now
+say what they got.
+
+--- a/drivers/usb/phy/phy-sprd-ums9632.c
++++ b/drivers/usb/phy/phy-sprd-ums9632.c
+@@ -313,7 +313,9 @@
+ 
+ 	platform_set_drvdata(pdev, p);
+ 
++	dev_info(dev, "usb_add_phy_dev...\n");
+ 	ret = usb_add_phy_dev(&p->phy);
++	dev_info(dev, "usb_add_phy_dev: %d\n", ret);
+ 	if (ret)
+ 		return dev_err_probe(dev, ret, "cannot add the usb_phy\n");
+ 
+--- a/drivers/usb/musb/musb_sprd.c
++++ b/drivers/usb/musb/musb_sprd.c
+@@ -190,6 +190,7 @@
+ 	 * resets in its place keeps the PHY driver from probing at all (EBUSY, ml10 2026-10-29).
+ 	 */
+ 	glue->xceiv = devm_usb_get_phy_by_phandle(dev, "usb-phy", 0);
++	dev_info(dev, "usb-phy: %ld\n", IS_ERR(glue->xceiv) ? PTR_ERR(glue->xceiv) : 0L);
+ 	if (glue->xceiv == ERR_PTR(-EPROBE_DEFER))
+ 		return dev_err_probe(dev, -EPROBE_DEFER, "waiting for the usb-phy\n");
+ 	if (IS_ERR(glue->xceiv)) {

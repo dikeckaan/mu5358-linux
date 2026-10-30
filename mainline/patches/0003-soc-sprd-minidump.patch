@@ -1,0 +1,285 @@
+soc: sprd: minidump: the kernel log into the Unisoc bootloader's sysdumpdb
+
+A failed mainline boot on the U30 Pro leaves no log: the bootloader rolls the slot back with a power-off, so
+RAM (ramoops) is gone before Android runs. After an abnormal reset (the PMIC watchdog) the bootloader saves
+the sections of the minidump record in sysdump_info to the sysdumpdb partition first. Publish the printk
+ring and a kmsg_dump text copy there, in the layout of Unisoc's sysdump driver.
+
+diff -Nur a/drivers/soc/Kconfig b/drivers/soc/Kconfig
+diff -Nur a/drivers/soc/Kconfig b/drivers/soc/Kconfig
+--- a/drivers/soc/Kconfig	2026-10-29 12:18:51.182120659 +0000
++++ b/drivers/soc/Kconfig	2026-10-29 12:18:51.188395001 +0000
+@@ -23,6 +23,7 @@
+ source "drivers/soc/renesas/Kconfig"
+ source "drivers/soc/rockchip/Kconfig"
+ source "drivers/soc/samsung/Kconfig"
++source "drivers/soc/sprd/Kconfig"
+ source "drivers/soc/sophgo/Kconfig"
+ source "drivers/soc/sunxi/Kconfig"
+ source "drivers/soc/tegra/Kconfig"
+diff -Nur a/drivers/soc/Makefile b/drivers/soc/Makefile
+--- a/drivers/soc/Makefile	2026-10-29 12:18:51.182725656 +0000
++++ b/drivers/soc/Makefile	2026-10-29 12:19:04.497268851 +0000
+@@ -29,6 +29,7 @@
+ obj-y				+= renesas/
+ obj-y				+= rockchip/
+ obj-$(CONFIG_SOC_SAMSUNG)	+= samsung/
++obj-$(CONFIG_SPRD_MINIDUMP)	+= sprd/
+ obj-y				+= sophgo/
+ obj-y				+= sunxi/
+ obj-$(CONFIG_ARCH_TEGRA)	+= tegra/
+diff -Nur a/drivers/soc/sprd/Kconfig b/drivers/soc/sprd/Kconfig
+--- a/drivers/soc/sprd/Kconfig	1970-01-01 00:00:00.000000000 +0000
++++ b/drivers/soc/sprd/Kconfig	2026-10-29 12:18:35.119421601 +0000
+@@ -0,0 +1,7 @@
++# SPDX-License-Identifier: GPL-2.0-only
++config SPRD_MINIDUMP
++	bool "Unisoc minidump: the kernel log into the bootloader's sysdumpdb"
++	depends on ARCH_SPRD && OF && PRINTK
++	help
++	  Publishes the printk ring and, after a panic or an oops, the log as text in the minidump record the
++	  Unisoc bootloader reads after an abnormal reset, so that it saves them to the sysdumpdb partition.
+diff -Nur a/drivers/soc/sprd/Makefile b/drivers/soc/sprd/Makefile
+--- a/drivers/soc/sprd/Makefile	1970-01-01 00:00:00.000000000 +0000
++++ b/drivers/soc/sprd/Makefile	2026-10-29 12:18:35.119662850 +0000
+@@ -0,0 +1 @@
++obj-$(CONFIG_SPRD_MINIDUMP)	+= sprd-minidump.o
+diff -Nur a/drivers/soc/sprd/sprd-minidump.c b/drivers/soc/sprd/sprd-minidump.c
+--- a/drivers/soc/sprd/sprd-minidump.c	1970-01-01 00:00:00.000000000 +0000
++++ b/drivers/soc/sprd/sprd-minidump.c	2026-10-29 12:27:32.366493461 +0000
+@@ -0,0 +1,235 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Unisoc minidump for the mainline kernel: the kernel log where the Unisoc bootloader saves it after an abnormal
++ * reset (the PMIC watchdog), into the sysdumpdb partition, read from Android afterwards.
++ *
++ * The bootloader finds a minidump_info through a record in sysdump_info, at the reserved memory
++ * "sysdumpinfo-mem"; minidump_info lists memory sections by physical address, and the bootloader saves each one
++ * (compressed) as NNN_minidump_<name>. The layouts are those of Unisoc's sysdump driver (5.4: sysdump.c,
++ * sysdumpdb.h); the vendor 6.6 sysdump.ko writes the record at the same offsets (264, 288, 296) with the same
++ * size, 0x6fb0.
++ *
++ * Two sections: the printk ring as it is (text readable with strings(1)) and, after a panic or an oops, the log
++ * as plain text from kmsg_dump. The bootloader reads DRAM with the caches off after the reset, so what is written
++ * here is cleaned to the point of coherency: the text after the dump, the ring every two seconds (a hang without
++ * a panic still leaves its log).
++ */
++#include <linux/build_bug.h>
++#include <linux/init.h>
++#include <linux/io.h>
++#include <linux/kmsg_dump.h>
++#include <linux/of.h>
++#include <linux/of_address.h>
++#include <linux/printk.h>
++#include <linux/ptrace.h>
++#include <linux/string.h>
++#include <linux/types.h>
++#include <linux/workqueue.h>
++#include <asm/cacheflush.h>
++
++#define SECTION_NUM_MAX		200
++#define SECTION_NAME_MAX	40
++#define REGS_NUM_MAX		50
++#define OSRELEASE_SIZE		300
++#define TIME_SIZE		50
++#define REBOOT_REASON_SIZE	50
++#define CONTENTS_DESC_SIZE	(1024 - OSRELEASE_SIZE - TIME_SIZE - REBOOT_REASON_SIZE)
++#define EXC_SHORT		256
++#define EXC_MID			512
++#define EXC_LONG		0x2000
++#define REGS_ARCH_ARM64		1
++
++struct md_regs_info {
++	int arch;
++	int num;
++	unsigned long vaddr;
++	unsigned long paddr;
++	int size;
++	int size_comp;
++};
++
++struct md_regs_memory_info {
++	unsigned long reg_vaddr[REGS_NUM_MAX - 1];
++	unsigned long reg_paddr[REGS_NUM_MAX - 1];
++	int per_reg_memory_size;
++	int per_mem_size_comp[REGS_NUM_MAX - 1];
++	int valid_reg_num;
++	int size;
++};
++
++struct md_section_info {
++	char section_name[SECTION_NAME_MAX];
++	unsigned long section_start_vaddr;
++	unsigned long section_end_vaddr;
++	unsigned long section_start_paddr;
++	unsigned long section_end_paddr;
++	int section_size;
++	int section_size_comp;
++};
++
++struct md_section_info_total {
++	struct md_section_info section_info[SECTION_NUM_MAX];
++	int total_size;
++	int total_num;
++};
++
++struct md_data_desc {
++	char osrelease[OSRELEASE_SIZE];
++	char time[TIME_SIZE];
++	char reboot_reason[REBOOT_REASON_SIZE];
++	char minidump_data[CONTENTS_DESC_SIZE];
++};
++
++struct md_exception_info {
++	char kernel_magic[8];
++	char exception_serialno[EXC_SHORT];
++	char exception_kernel_version[EXC_MID];
++	char exception_reboot_reason[EXC_SHORT];
++	char exception_panic_reason[EXC_SHORT];
++	char exception_time[EXC_SHORT];
++	char exception_file_info[EXC_SHORT];
++	int exception_task_id;
++	char exception_task_family[EXC_SHORT];
++	char exception_pc_symbol[EXC_SHORT];
++	char exception_stack_info[EXC_LONG];
++};
++
++struct md_minidump_info {
++	char kernel_magic[6];
++	struct md_regs_info regs_info;
++	struct md_regs_memory_info regs_memory_info;
++	struct md_section_info_total section_info_total;
++	int minidump_elfhdr_size;
++	int minidump_elfhdr_size_comp;
++	struct md_data_desc desc;
++	int minidump_data_size;
++	int compressed;
++	struct md_exception_info exception_info;
++};
++
++/* the head of sysdump_info, up to the minidump record */
++struct md_sysdump_info {
++	char magic[16];
++	char time[32];
++	char reason[32];
++	char dump_path[128];
++	int elfhdr_size;
++	int mem_num;
++	unsigned long dump_mem_paddr;
++	int crash_key;
++	u64 kaslr[4];
++	char minidump_magic[20];
++	u64 minidump_info_paddr;
++	int minidump_info_size;
++};
++
++static_assert(sizeof(struct md_minidump_info) == 0x6fb0);
++static_assert(offsetof(struct md_sysdump_info, minidump_magic) == 264);
++static_assert(offsetof(struct md_sysdump_info, minidump_info_paddr) == 288);
++static_assert(offsetof(struct md_sysdump_info, minidump_info_size) == 296);
++
++#define TEXT_SIZE	(256 * 1024)
++
++static struct md_minidump_info md_info;
++static struct pt_regs md_regs;
++static char md_text[TEXT_SIZE] __aligned(PAGE_SIZE);
++
++static void md_clean(const void *va, size_t size)
++{
++	dcache_clean_poc((unsigned long)va, (unsigned long)va + size);
++}
++
++static void md_clean_ring(struct work_struct *work);
++static DECLARE_DELAYED_WORK(md_ring_work, md_clean_ring);
++
++static void md_clean_ring(struct work_struct *work)
++{
++	md_clean(log_buf_addr_get(), log_buf_len_get());
++	schedule_delayed_work(&md_ring_work, 2 * HZ);
++}
++
++static void md_add(const char *name, void *va, size_t size)
++{
++	struct md_section_info_total *t = &md_info.section_info_total;
++	struct md_section_info *s = &t->section_info[t->total_num];
++
++	snprintf(s->section_name, sizeof(s->section_name), "extend_%s", name);
++	s->section_start_vaddr = (unsigned long)va;
++	s->section_end_vaddr = (unsigned long)va + size;
++	s->section_start_paddr = __pa(va);
++	s->section_end_paddr = __pa(va) + size;
++	s->section_size = size;
++	t->total_size += size;
++	t->total_num++;
++	md_info.minidump_data_size += size;
++}
++
++static void md_dump(struct kmsg_dumper *dumper, struct kmsg_dump_detail *detail)
++{
++	struct kmsg_dump_iter iter;
++	size_t len = 0;
++
++	kmsg_dump_rewind(&iter);
++	/* the newest messages that fit */
++	kmsg_dump_get_buffer(&iter, false, md_text, TEXT_SIZE - 1, &len);
++	md_text[len] = 0;
++	strscpy(md_info.desc.reboot_reason, kmsg_dump_reason_str(detail->reason), REBOOT_REASON_SIZE);
++	strscpy(md_info.exception_info.exception_panic_reason,
++		detail->description ?: kmsg_dump_reason_str(detail->reason), EXC_SHORT);
++	md_clean(md_text, TEXT_SIZE);
++	md_clean(&md_info, sizeof(md_info));
++	md_clean(log_buf_addr_get(), log_buf_len_get());
++}
++
++static struct kmsg_dumper md_dumper = {
++	.dump = md_dump,
++	.max_reason = KMSG_DUMP_OOPS,
++};
++
++static int __init sprd_minidump_init(void)
++{
++	struct md_sysdump_info *si;
++	struct device_node *np;
++	struct resource res;
++	int ret;
++
++	np = of_find_node_by_name(NULL, "sysdumpinfo-mem");
++	if (!np)
++		return -ENODEV;
++	ret = of_address_to_resource(np, 0, &res);
++	of_node_put(np);
++	if (ret)
++		return ret;
++	si = memremap(res.start, resource_size(&res), MEMREMAP_WB);
++	if (!si)
++		return -ENOMEM;
++
++	memcpy(md_info.kernel_magic, "K2.0", 4);
++	memcpy(md_info.exception_info.kernel_magic, "K2.0", 4);
++	md_info.regs_info.arch = REGS_ARCH_ARM64;
++	md_info.regs_info.num = 33;
++	md_info.regs_info.vaddr = (unsigned long)&md_regs;
++	md_info.regs_info.paddr = __pa_symbol(&md_regs);
++	md_info.regs_info.size = sizeof(md_regs);
++	md_info.compressed = 1;
++	strscpy(md_info.desc.osrelease, linux_banner, OSRELEASE_SIZE);
++	strscpy(md_info.exception_info.exception_kernel_version, linux_banner, EXC_MID);
++
++	md_add("printk_ring", log_buf_addr_get(), log_buf_len_get());
++	md_add("kmsg_text", md_text, TEXT_SIZE);
++
++	memset(si->minidump_magic, 0, sizeof(si->minidump_magic));
++	memcpy(si->minidump_magic, "SPRD_MINIDUMP", sizeof("SPRD_MINIDUMP"));
++	si->minidump_info_paddr = __pa_symbol(&md_info);
++	si->minidump_info_size = sizeof(md_info);
++	md_clean(&md_info, sizeof(md_info));
++	md_clean(si, resource_size(&res));
++
++	/* workqueue_init() ran before the initcalls */
++	schedule_delayed_work(&md_ring_work, 0);
++	ret = kmsg_dump_register(&md_dumper);
++	pr_info("sprd-minidump: record at %pa, info at %llx, log %u bytes at %llx\n", &res.start,
++		si->minidump_info_paddr, log_buf_len_get(), (u64)__pa(log_buf_addr_get()));
++	return ret;
++}
++core_initcall(sprd_minidump_init);

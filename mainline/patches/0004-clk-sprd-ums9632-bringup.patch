@@ -1,0 +1,285 @@
+clk: sprd: UMS9632 bring-up clocks for the eMMC host and the USB controller
+
+Stand-ins for the clocks the UMS9632 eMMC host asks for (ap-clk 0x01 ap-axi, 0x15 emmc-2x; apahb-gate 3
+emmc-eb; g1-pll 2 rpll-390m, its assigned parent), with the vendor kernel's rates and without touching their
+registers; and the real AON_APB gates and resets of the USB controller and its PHY (aon-gate 0x14, 0x3d;
+resets 8, 9), which the bootloader leaves off. Until there is a real UMS9632 clock driver.
+
+--- a/drivers/clk/sprd/Kconfig	2026-10-29 12:56:04.725052787 +0000
++++ b/drivers/clk/sprd/Kconfig	2026-10-29 13:42:55.649846709 +0000
+@@ -5,6 +5,15 @@
+ 	default ARCH_SPRD
+ 	select REGMAP_MMIO
+ 
++config SPRD_UMS9632_BRINGUP_CLK
++	bool "UMS9632 bring-up clocks (eMMC host and USB controller)"
++	depends on ARM64 && ARCH_SPRD && COMMON_CLK
++	select RESET_CONTROLLER
++	help
++	  Stand-ins for the UMS9632 clocks the eMMC host needs, with the
++	  rates the vendor kernel uses, and the USB gates and resets, until
++	  there is a real clock driver.
++
+ if SPRD_COMMON_CLK
+ 
+ # SoC Drivers
+--- a/drivers/clk/sprd/Makefile	2026-10-29 12:56:04.727446495 +0000
++++ b/drivers/clk/sprd/Makefile	2026-10-29 12:56:04.761295582 +0000
+@@ -1,5 +1,6 @@
+ # SPDX-License-Identifier: GPL-2.0-only
+ obj-$(CONFIG_SPRD_COMMON_CLK)	+= clk-sprd.o
++obj-$(CONFIG_SPRD_UMS9632_BRINGUP_CLK)	+= ums9632-bringup-clk.o
+ 
+ clk-sprd-y	+= common.o
+ clk-sprd-y	+= gate.o
+--- a/drivers/clk/sprd/ums9632-bringup-clk.c
++++ b/drivers/clk/sprd/ums9632-bringup-clk.c	2026-10-29 13:42:41.009651135 +0000
+@@ -0,0 +1,248 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * UMS9632 bring-up clocks: the few clocks the eMMC host and the USB controller ask for, until there is a real
++ * UMS9632 clock driver. The eMMC ones are stand-ins, as the bootloader left them (nothing touches their registers);
++ * the USB ones are real gates and resets in AON_APB, which the bootloader turns off before starting the kernel
++ * (the MUSB registers abort unclocked, 2026-10-29). Their bits are those of the vendor ums9632-clk.ko
++ * (ums9632_aon_gate_clks, ums9632_aon_apb_resets): set at +0x1000, clear at +0x2000.
++ *
++ * Rates are those the vendor kernel runs with: ap-axi 256 MHz (its sdhci log, "ap axi rate is 256000000"); the
++ * eMMC source emmc-2x from rpll-390m, the parent the vendor device tree assigns it (g1-pll output 2 in the vendor
++ * ums9632-clk.ko), so at most 390 MHz - sdhci-sprd divides from the rate it is told, and a real rate below it only
++ * makes the card clock slower. The gate (apahb emmc-eb) is a stand-in: the bootloader left it on.
++ */
++#include <linux/clk-provider.h>
++#include <linux/err.h>
++#include <linux/io.h>
++#include <linux/of.h>
++#include <linux/of_address.h>
++#include <linux/reset-controller.h>
++#include <linux/slab.h>
++
++struct bringup_clk {
++	unsigned int index;
++	const char *name;
++	const char *parent;		/* a 1:1 child of this clock, or */
++	unsigned long rate;		/* a fixed rate */
++};
++
++static void __init bringup_clk_init(struct device_node *np, const struct bringup_clk *c, unsigned int n)
++{
++	struct clk_hw_onecell_data *data;
++	unsigned int i, num = 0;
++
++	for (i = 0; i < n; i++)
++		num = max(num, c[i].index + 1);
++	data = kzalloc(struct_size(data, hws, num), GFP_KERNEL);
++	if (!data)
++		return;
++	data->num = num;
++	for (i = 0; i < num; i++)
++		data->hws[i] = ERR_PTR(-ENOENT);
++	for (i = 0; i < n; i++) {
++		struct clk_hw *hw;
++
++		if (c[i].parent)
++			hw = clk_hw_register_fixed_factor(NULL, c[i].name, c[i].parent, 0, 1, 1);
++		else
++			hw = clk_hw_register_fixed_rate(NULL, c[i].name, NULL, 0, c[i].rate);
++		if (IS_ERR(hw)) {
++			pr_err("%pOF: %s: %ld\n", np, c[i].name, PTR_ERR(hw));
++			continue;
++		}
++		data->hws[c[i].index] = hw;
++	}
++	of_clk_add_hw_provider(np, of_clk_hw_onecell_get, data);
++}
++
++static const struct bringup_clk g1_pll[] = {
++	{ 2, "rpll-390m", NULL, 390000000 },
++};
++
++static const struct bringup_clk ap_clk[] = {
++	{ 0x01, "ap-axi", NULL, 256000000 },
++	{ 0x15, "emmc-2x", "rpll-390m" },
++};
++
++static const struct bringup_clk apahb_gate[] = {
++	{ 3, "emmc-eb", "ap-axi" },
++};
++
++/* AON_APB gates and resets: a register, a bit, and the set/clear registers 0x1000 and 0x2000 above it */
++#define AON_SET		0x1000
++#define AON_CLR		0x2000
++
++struct aon_bit {
++	unsigned int index;
++	const char *name;
++	u32 reg;
++	u32 mask;
++};
++
++struct aon_gate {
++	struct clk_hw hw;
++	void __iomem *base;
++	const struct aon_bit *bit;
++};
++
++static int aon_gate_enable(struct clk_hw *hw)
++{
++	struct aon_gate *g = container_of(hw, struct aon_gate, hw);
++
++	writel(g->bit->mask, g->base + g->bit->reg + AON_SET);
++	return 0;
++}
++
++static void aon_gate_disable(struct clk_hw *hw)
++{
++	struct aon_gate *g = container_of(hw, struct aon_gate, hw);
++
++	writel(g->bit->mask, g->base + g->bit->reg + AON_CLR);
++}
++
++static int aon_gate_is_enabled(struct clk_hw *hw)
++{
++	struct aon_gate *g = container_of(hw, struct aon_gate, hw);
++
++	return !!(readl(g->base + g->bit->reg) & g->bit->mask);
++}
++
++static const struct clk_ops aon_gate_ops = {
++	.enable = aon_gate_enable,
++	.disable = aon_gate_disable,
++	.is_enabled = aon_gate_is_enabled,
++};
++
++static const struct aon_bit aon_gates[] = {
++	{ 0x14, "aon-usb2-top-eb", 0x0004, BIT(8) },	/* the MUSB's core_clk */
++	{ 0x3d, "otg-ref-eb", 0x0138, BIT(12) },	/* the USB PHY's otg_ref_eb */
++};
++
++static const struct aon_bit aon_resets[] = {
++	{ 8, "musb-utmi-rst", 0x0010, BIT(8) },
++	{ 9, "musb-phy-rst", 0x0010, BIT(9) },
++};
++
++struct aon_reset {
++	struct reset_controller_dev rcdev;
++	void __iomem *base;
++};
++
++static const struct aon_bit *aon_reset_bit(unsigned long id)
++{
++	unsigned int i;
++
++	for (i = 0; i < ARRAY_SIZE(aon_resets); i++)
++		if (aon_resets[i].index == id)
++			return &aon_resets[i];
++	return NULL;
++}
++
++static int aon_reset_update(struct reset_controller_dev *rcdev, unsigned long id, bool assert)
++{
++	struct aon_reset *r = container_of(rcdev, struct aon_reset, rcdev);
++	const struct aon_bit *b = aon_reset_bit(id);
++
++	if (!b)
++		return -EINVAL;
++	writel(b->mask, r->base + b->reg + (assert ? AON_SET : AON_CLR));
++	return 0;
++}
++
++static int aon_reset_assert(struct reset_controller_dev *rcdev, unsigned long id)
++{
++	return aon_reset_update(rcdev, id, true);
++}
++
++static int aon_reset_deassert(struct reset_controller_dev *rcdev, unsigned long id)
++{
++	return aon_reset_update(rcdev, id, false);
++}
++
++static int aon_reset_status(struct reset_controller_dev *rcdev, unsigned long id)
++{
++	struct aon_reset *r = container_of(rcdev, struct aon_reset, rcdev);
++	const struct aon_bit *b = aon_reset_bit(id);
++
++	return b ? !!(readl(r->base + b->reg) & b->mask) : -EINVAL;
++}
++
++static const struct reset_control_ops aon_reset_ops = {
++	.assert = aon_reset_assert,
++	.deassert = aon_reset_deassert,
++	.status = aon_reset_status,
++};
++
++/* the gate node has no registers of its own: they are those of its parent, the aon_apb_regs syscon */
++static void __init ums9632_aon_gate_init(struct device_node *np)
++{
++	struct clk_hw_onecell_data *data;
++	struct device_node *parent;
++	struct aon_reset *rst;
++	void __iomem *base;
++	unsigned int i, num = 0;
++
++	parent = of_get_parent(np);
++	base = of_iomap(parent, 0);
++	of_node_put(parent);
++	if (!base) {
++		pr_err("%pOF: cannot map the AON_APB registers\n", np);
++		return;
++	}
++	for (i = 0; i < ARRAY_SIZE(aon_gates); i++)
++		num = max(num, aon_gates[i].index + 1);
++	data = kzalloc(struct_size(data, hws, num), GFP_KERNEL);
++	if (!data)
++		return;
++	data->num = num;
++	for (i = 0; i < num; i++)
++		data->hws[i] = ERR_PTR(-ENOENT);
++	for (i = 0; i < ARRAY_SIZE(aon_gates); i++) {
++		struct clk_init_data init = { .name = aon_gates[i].name, .ops = &aon_gate_ops };
++		struct aon_gate *g = kzalloc(sizeof(*g), GFP_KERNEL);
++
++		if (!g)
++			return;
++		g->base = base;
++		g->bit = &aon_gates[i];
++		g->hw.init = &init;
++		if (clk_hw_register(NULL, &g->hw)) {
++			pr_err("%pOF: %s not registered\n", np, init.name);
++			kfree(g);
++			continue;
++		}
++		data->hws[aon_gates[i].index] = &g->hw;
++	}
++	of_clk_add_hw_provider(np, of_clk_hw_onecell_get, data);
++
++	rst = kzalloc(sizeof(*rst), GFP_KERNEL);
++	if (!rst)
++		return;
++	rst->base = base;
++	rst->rcdev.ops = &aon_reset_ops;
++	rst->rcdev.of_node = np;
++	rst->rcdev.of_reset_n_cells = 1;
++	rst->rcdev.nr_resets = 64;
++	rst->rcdev.owner = THIS_MODULE;
++	if (reset_controller_register(&rst->rcdev))
++		pr_err("%pOF: resets not registered\n", np);
++}
++CLK_OF_DECLARE(ums9632_aon_gate, "sprd,ums9632-aon-gate", ums9632_aon_gate_init);
++
++static void __init ums9632_g1_pll_init(struct device_node *np)
++{
++	bringup_clk_init(np, g1_pll, ARRAY_SIZE(g1_pll));
++}
++CLK_OF_DECLARE(ums9632_g1_pll, "sprd,ums9632-g1-pll", ums9632_g1_pll_init);
++
++static void __init ums9632_ap_clk_init(struct device_node *np)
++{
++	bringup_clk_init(np, ap_clk, ARRAY_SIZE(ap_clk));
++}
++CLK_OF_DECLARE(ums9632_ap_clk, "sprd,ums9632-ap-clk", ums9632_ap_clk_init);
++
++static void __init ums9632_apahb_gate_init(struct device_node *np)
++{
++	bringup_clk_init(np, apahb_gate, ARRAY_SIZE(apahb_gate));
++}
++CLK_OF_DECLARE(ums9632_apahb_gate, "sprd,ums9632-apahb-gate", ums9632_apahb_gate_init);

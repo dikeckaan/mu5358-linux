@@ -1,0 +1,287 @@
+usb: musb: add a Unisoc glue (UMS9632), peripheral mode and PIO only
+
+"sprd,ums9632-musb", reduced from the vendor musb_sprd.c: musb-hdrc as a gadget with the vendor FIFO table (16
+endpoints, 32 KiB FIFO RAM, multipoint), Unisoc's own DMA engine turned off. Clocks, resets and the USB PHY have no
+mainline provider yet, so each is used when there and otherwise skipped; the bootloader leaves the controller
+clocked and its PHY set up.
+
+--- a/drivers/usb/musb/Kconfig	2026-10-29 16:23:45
++++ b/drivers/usb/musb/Kconfig	2026-10-29 16:24:40
+@@ -123,6 +123,19 @@
+ 	  This support is also available as a module.  If so, the module
+ 	  will be called mpfs.
+ 
++config USB_MUSB_SPRD
++	tristate "Unisoc (Spreadtrum) platforms"
++	depends on ARCH_SPRD || COMPILE_TEST
++	depends on OF
++	depends on USB_MUSB_GADGET
++	select MUSB_PIO_ONLY
++	help
++	  Glue for the MUSB controller of Unisoc SoCs such as the UMS9632,
++	  peripheral mode only. Unisoc's own DMA engine is not supported, so
++	  this selects PIO.
++
++	  If built as a module, it will be called musb_sprd.
++
+ comment "MUSB DMA mode"
+ 
+ config MUSB_PIO_ONLY
+--- a/drivers/usb/musb/Makefile	2026-10-29 16:23:45
++++ b/drivers/usb/musb/Makefile	2026-10-29 16:24:40
+@@ -24,6 +24,7 @@
+ obj-$(CONFIG_USB_MUSB_SUNXI)			+= sunxi.o
+ obj-$(CONFIG_USB_MUSB_MEDIATEK)      		+= mediatek.o
+ obj-$(CONFIG_USB_MUSB_POLARFIRE_SOC)		+= mpfs.o
++obj-$(CONFIG_USB_MUSB_SPRD)			+= musb_sprd.o
+ 
+ # the kconfig must guarantee that only one of the
+ # possible I/O schemes will be enabled at a time ...
+--- a/drivers/usb/musb/musb_sprd.c
++++ b/drivers/usb/musb/musb_sprd.c	2026-10-29 16:24:27
+@@ -0,0 +1,245 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Unisoc (Spreadtrum) MUSB glue, peripheral mode and PIO only, for the UMS9632.
++ *
++ * Reduced from the vendor glue (musb_sprd.c of the Unisoc 5.4 kernel) to what a gadget needs when the bootloader
++ * left the controller and its PHY clocked, out of reset and powered. Mainline has no UMS9632 clock, reset or USB PHY
++ * driver yet, so each of those is used when it is there and skipped (with a message) when it is not. No cable,
++ * charger or role handling and no runtime PM: the controller stays powered while this driver is bound. Unisoc's own
++ * DMA engine (not the Inventra one) is turned off and all data goes through the FIFOs by PIO.
++ */
++
++#include <linux/clk.h>
++#include <linux/device/driver.h>
++#include <linux/err.h>
++#include <linux/kernel.h>
++#include <linux/mfd/syscon.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/platform_device.h>
++#include <linux/regmap.h>
++#include <linux/reset.h>
++#include <linux/usb/musb.h>
++#include <linux/usb/phy.h>
++
++#include "musb_core.h"
++
++/* the Unisoc DMA engine, in the same register window as the core (vendor sprd_musbhsdma.h) */
++#define SPRD_DMA_CHANNELS	30
++#define SPRD_DMA_CHN_CFG(n)	(0x1c04 + ((n) - 1) * 0x20)
++#define SPRD_DMA_CHN_INTR(n)	(0x1c08 + ((n) - 1) * 0x20)
++#define SPRD_DMA_CHN_EN		BIT(0)
++#define SPRD_DMA_CHN_INT_EN	GENMASK(5, 2)	/* llist, start, usbrx, clear */
++#define SPRD_DMA_CHN_INT_CLR	GENMASK(28, 24)	/* frag, blk, llist, start, usbrx-last */
++
++struct sprd_musb_glue {
++	struct platform_device	*musb;
++	struct usb_phy		*xceiv;
++};
++
++/*
++ * A resource whose provider is missing: wait for it while the driver core still expects drivers to show up, then
++ * go on without it (the bootloader's setting stays).
++ */
++static int sprd_musb_skip(struct device *dev, int err, const char *what)
++{
++	if (err == -EPROBE_DEFER)
++		err = driver_deferred_probe_check_state(dev);
++	if (err == -EPROBE_DEFER)
++		return err;
++	dev_info(dev, "%s: not available (%d), skipped\n", what, err);
++	return 0;
++}
++
++/* Not written here (their use is not in the vendor sources), only shown, for whoever adds them. */
++static void sprd_musb_show_syscon(struct device *dev, const char *prop)
++{
++	struct regmap *map;
++	u32 args[2], val;
++
++	if (!of_property_present(dev->of_node, prop))
++		return;
++	map = syscon_regmap_lookup_by_phandle_args(dev->of_node, prop, 2, args);
++	if (IS_ERR(map)) {
++		dev_info(dev, "%s: no syscon (%ld), skipped\n", prop, PTR_ERR(map));
++		return;
++	}
++	if (!regmap_read(map, args[0], &val))
++		dev_info(dev, "%s: [%#x] = %#x (mask %#x), left as is\n", prop, args[0], val, args[1]);
++}
++
++static irqreturn_t sprd_musb_interrupt(int irq, void *__hci)
++{
++	struct musb *musb = __hci;
++	irqreturn_t ret = IRQ_NONE;
++	unsigned long flags;
++
++	spin_lock_irqsave(&musb->lock, flags);
++	/* only enabled sources count, as in the vendor glue */
++	musb->int_usb = musb_readb(musb->mregs, MUSB_INTRUSB) & musb_readb(musb->mregs, MUSB_INTRUSBE);
++	musb->int_tx = musb_readw(musb->mregs, MUSB_INTRTX) & musb_readw(musb->mregs, MUSB_INTRTXE);
++	musb->int_rx = musb_readw(musb->mregs, MUSB_INTRRX) & musb_readw(musb->mregs, MUSB_INTRRXE);
++	if (musb->int_usb || musb->int_tx || musb->int_rx)
++		ret = musb_interrupt(musb);
++	spin_unlock_irqrestore(&musb->lock, flags);
++
++	return ret;
++}
++
++static int sprd_musb_init(struct musb *musb)
++{
++	struct sprd_musb_glue *glue = dev_get_drvdata(musb->controller->parent);
++	u32 v;
++	int i;
++
++	musb->xceiv = glue->xceiv;
++	/* the vendor glue says so too; the FIFO RAM is laid out from sprd_musb_fifo_cfg */
++	musb->dyn_fifo = true;
++
++	/*
++	 * PIO only: a DMA channel the bootloader left on would move FIFO data behind the core's back, and one left
++	 * with its interrupt enabled would hold the shared line, which no MUSB status bit explains.
++	 */
++	for (i = 1; i <= SPRD_DMA_CHANNELS; i++) {
++		v = musb_readl(musb->mregs, SPRD_DMA_CHN_CFG(i));
++		musb_writel(musb->mregs, SPRD_DMA_CHN_CFG(i), v & ~SPRD_DMA_CHN_EN);
++		v = musb_readl(musb->mregs, SPRD_DMA_CHN_INTR(i));
++		musb_writel(musb->mregs, SPRD_DMA_CHN_INTR(i), (v & ~SPRD_DMA_CHN_INT_EN) | SPRD_DMA_CHN_INT_CLR);
++	}
++
++	musb->isr = sprd_musb_interrupt;
++
++	return 0;
++}
++
++static const struct musb_platform_ops sprd_musb_ops = {
++	.init	= sprd_musb_init,
++};
++
++/* the vendor glue's device-mode table: 15 double-buffered 512-byte FIFOs each way, 30 KiB of the 32 KiB RAM */
++static const struct musb_fifo_cfg sprd_musb_fifo_cfg[] = {
++	MUSB_EP_FIFO_DOUBLE(1, FIFO_TX, 512),	MUSB_EP_FIFO_DOUBLE(1, FIFO_RX, 512),
++	MUSB_EP_FIFO_DOUBLE(2, FIFO_TX, 512),	MUSB_EP_FIFO_DOUBLE(2, FIFO_RX, 512),
++	MUSB_EP_FIFO_DOUBLE(3, FIFO_TX, 512),	MUSB_EP_FIFO_DOUBLE(3, FIFO_RX, 512),
++	MUSB_EP_FIFO_DOUBLE(4, FIFO_TX, 512),	MUSB_EP_FIFO_DOUBLE(4, FIFO_RX, 512),
++	MUSB_EP_FIFO_DOUBLE(5, FIFO_TX, 512),	MUSB_EP_FIFO_DOUBLE(5, FIFO_RX, 512),
++	MUSB_EP_FIFO_DOUBLE(6, FIFO_TX, 512),	MUSB_EP_FIFO_DOUBLE(6, FIFO_RX, 512),
++	MUSB_EP_FIFO_DOUBLE(7, FIFO_TX, 512),	MUSB_EP_FIFO_DOUBLE(7, FIFO_RX, 512),
++	MUSB_EP_FIFO_DOUBLE(8, FIFO_TX, 512),	MUSB_EP_FIFO_DOUBLE(8, FIFO_RX, 512),
++	MUSB_EP_FIFO_DOUBLE(9, FIFO_TX, 512),	MUSB_EP_FIFO_DOUBLE(9, FIFO_RX, 512),
++	MUSB_EP_FIFO_DOUBLE(10, FIFO_TX, 512),	MUSB_EP_FIFO_DOUBLE(10, FIFO_RX, 512),
++	MUSB_EP_FIFO_DOUBLE(11, FIFO_TX, 512),	MUSB_EP_FIFO_DOUBLE(11, FIFO_RX, 512),
++	MUSB_EP_FIFO_DOUBLE(12, FIFO_TX, 512),	MUSB_EP_FIFO_DOUBLE(12, FIFO_RX, 512),
++	MUSB_EP_FIFO_DOUBLE(13, FIFO_TX, 512),	MUSB_EP_FIFO_DOUBLE(13, FIFO_RX, 512),
++	MUSB_EP_FIFO_DOUBLE(14, FIFO_TX, 512),	MUSB_EP_FIFO_DOUBLE(14, FIFO_RX, 512),
++	MUSB_EP_FIFO_DOUBLE(15, FIFO_TX, 512),	MUSB_EP_FIFO_DOUBLE(15, FIFO_RX, 512),
++};
++
++static const struct musb_hdrc_config sprd_musb_config = {
++	.fifo_cfg	= sprd_musb_fifo_cfg,
++	.fifo_cfg_size	= ARRAY_SIZE(sprd_musb_fifo_cfg),
++	.multipoint	= 1,	/* the board's "multipoint" property */
++	.num_eps	= 16,	/* with ep0 */
++	.ram_bits	= 13,	/* 2^13 words = 32 KiB */
++};
++
++static int sprd_musb_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct musb_hdrc_platform_data pdata = {
++		.mode		= MUSB_PERIPHERAL,
++		.config		= &sprd_musb_config,
++		.platform_ops	= &sprd_musb_ops,
++	};
++	/*
++	 * The child shares the node (musb-hdrc finds its "mc" interrupt there); of_node_reused keeps this driver
++	 * from matching the child as well.
++	 */
++	struct platform_device_info pinfo = {
++		.parent		= dev,
++		.fwnode		= dev_fwnode(dev),
++		.of_node_reused	= true,
++		.name		= "musb-hdrc",
++		.id		= PLATFORM_DEVID_AUTO,
++		.res		= pdev->resource,
++		.num_res	= pdev->num_resources,
++		.data		= &pdata,
++		.size_data	= sizeof(pdata),
++	};
++	static const char * const resets[] = { "musb_phy_rst", "musb_utmi_rst" };
++	struct sprd_musb_glue *glue;
++	struct reset_control *rst;
++	struct clk *clk;
++	int i, ret;
++
++	glue = devm_kzalloc(dev, sizeof(*glue), GFP_KERNEL);
++	if (!glue)
++		return -ENOMEM;
++
++	/* the hclk_* clocks only matter for the suspend clock switch, which this driver does not do */
++	clk = devm_clk_get_optional_enabled(dev, "core_clk");
++	if (IS_ERR(clk)) {
++		ret = sprd_musb_skip(dev, PTR_ERR(clk), "core_clk");
++		if (ret)
++			return ret;
++	}
++
++	/* released only: pulsing them would undo the PHY setup the bootloader did, which nothing here redoes */
++	for (i = 0; i < ARRAY_SIZE(resets); i++) {
++		rst = devm_reset_control_get_optional_shared_deasserted(dev, resets[i]);
++		if (IS_ERR(rst)) {
++			ret = sprd_musb_skip(dev, PTR_ERR(rst), resets[i]);
++			if (ret)
++				return ret;
++		}
++	}
++
++	/* a usb_phy, as the vendor PHY drivers are; musb keeps its OTG state in the PHY's otg, so it must have one */
++	glue->xceiv = devm_usb_get_phy_by_phandle(dev, "usb-phy", 0);
++	if (IS_ERR(glue->xceiv)) {
++		ret = sprd_musb_skip(dev, PTR_ERR(glue->xceiv), "usb-phy");
++		if (ret)
++			return ret;
++		glue->xceiv = NULL;
++	} else if (!glue->xceiv->otg) {
++		dev_info(dev, "usb-phy: no otg state, skipped\n");
++		glue->xceiv = NULL;
++	}
++
++	sprd_musb_show_syscon(dev, "pubsys_bypass");
++	sprd_musb_show_syscon(dev, "suspend_clk_source_frc_on");
++
++	platform_set_drvdata(pdev, glue);
++
++	glue->musb = platform_device_register_full(&pinfo);
++	if (IS_ERR(glue->musb))
++		return dev_err_probe(dev, PTR_ERR(glue->musb), "cannot register musb-hdrc\n");
++
++	return 0;
++}
++
++static void sprd_musb_remove(struct platform_device *pdev)
++{
++	struct sprd_musb_glue *glue = platform_get_drvdata(pdev);
++
++	platform_device_unregister(glue->musb);
++}
++
++static const struct of_device_id sprd_musb_of_match[] = {
++	{ .compatible = "sprd,ums9632-musb" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, sprd_musb_of_match);
++
++static struct platform_driver sprd_musb_driver = {
++	.probe	= sprd_musb_probe,
++	.remove	= sprd_musb_remove,
++	.driver	= {
++		.name		= "musb-sprd",
++		.of_match_table	= sprd_musb_of_match,
++	},
++};
++module_platform_driver(sprd_musb_driver);
++
++MODULE_DESCRIPTION("Unisoc MUSB glue (peripheral, PIO)");
++MODULE_LICENSE("GPL");

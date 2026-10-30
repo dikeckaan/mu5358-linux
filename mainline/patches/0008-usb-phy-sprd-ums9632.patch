@@ -1,0 +1,436 @@
+usb: phy: add the Unisoc UMS9632 USB 2.0 PHY, peripheral mode
+
+"sprd,ums9632-phy" as a legacy usb_phy with an otg, which is what the MUSB glue (patches/0006) looks for behind
+its "usb-phy" phandle. Decoded from the vendor's 6.6 module usb-phy-sprd-hs.ko (its UMS9632 tables and v4 ops):
+init turns on otg_ref_eb, powers the PHY up (AON_APB 0x350 PD_L/PD_S, analog 0x18 and AON_APB 0x190 isolation),
+selects the 16-bit UTMI, pulses phy_rst/utmi_rst, sets device mode with the trim (analog 0x10) and reports VBUS
+valid (AON_APB 0x204 bit 24, analog 0x04 bit 16), as the vendor does on a cable connect: there is no charger or
+extcon driver yet. Needs the two syscons (MFD_SYSCON). The efuse trim is applied when an nvmem provider for it
+exists, which mainline does not have for this SoC yet.
+
+The glue now looks the PHY up before its resets and leaves the two reset lines, which are the PHY's too, to the
+PHY driver when there is one.
+
+--- a/drivers/usb/musb/musb_sprd.c	2026-10-29 16:56:42
++++ b/drivers/usb/musb/musb_sprd.c	2026-10-29 16:57:05
+@@ -184,16 +184,6 @@
+ 			return ret;
+ 	}
+ 
+-	/* released only: pulsing them would undo the PHY setup the bootloader did, which nothing here redoes */
+-	for (i = 0; i < ARRAY_SIZE(resets); i++) {
+-		rst = devm_reset_control_get_optional_shared_deasserted(dev, resets[i]);
+-		if (IS_ERR(rst)) {
+-			ret = sprd_musb_skip(dev, PTR_ERR(rst), resets[i]);
+-			if (ret)
+-				return ret;
+-		}
+-	}
+-
+ 	/* a usb_phy, as the vendor PHY drivers are; musb keeps its OTG state in the PHY's otg, so it must have one */
+ 	glue->xceiv = devm_usb_get_phy_by_phandle(dev, "usb-phy", 0);
+ 	if (IS_ERR(glue->xceiv)) {
+@@ -206,6 +196,19 @@
+ 		glue->xceiv = NULL;
+ 	}
+ 
++	/*
++	 * The same two AON_APB lines are the PHY's phy_rst and utmi_rst: with a PHY driver they are its own (it pulses
++	 * them in usb_phy_init), else they are released here, as the bootloader's PHY setup is all there is.
++	 */
++	for (i = 0; !glue->xceiv && i < ARRAY_SIZE(resets); i++) {
++		rst = devm_reset_control_get_optional_shared_deasserted(dev, resets[i]);
++		if (IS_ERR(rst)) {
++			ret = sprd_musb_skip(dev, PTR_ERR(rst), resets[i]);
++			if (ret)
++				return ret;
++		}
++	}
++
+ 	sprd_musb_show_syscon(dev, "pubsys_bypass");
+ 	sprd_musb_show_syscon(dev, "suspend_clk_source_frc_on");
+ 
+--- a/drivers/usb/phy/Kconfig	2026-10-29 16:56:42
++++ b/drivers/usb/phy/Kconfig	2026-10-29 16:56:52
+@@ -146,6 +146,20 @@
+ 	  This driver provides PHY support for the USB controllers found
+ 	  on NVIDIA Tegra SoC's.
+ 
++config USB_SPRD_UMS9632_PHY
++	tristate "Unisoc UMS9632 USB 2.0 PHY"
++	depends on ARCH_SPRD || COMPILE_TEST
++	depends on OF
++	select MFD_SYSCON
++	select USB_PHY
++	help
++	  The USB 2.0 PHY of the Unisoc UMS9632, used by its MUSB controller
++	  (USB_MUSB_SPRD). Peripheral mode: VBUS is reported as valid by the
++	  PHY from init on, since there is no charger or extcon driver to say
++	  when a cable is in.
++
++	  If built as a module, it will be called phy-sprd-ums9632.
++
+ config USB_ULPI
+ 	bool "Generic ULPI Transceiver Driver"
+ 	depends on ARM || ARM64 || COMPILE_TEST
+--- a/drivers/usb/phy/Makefile	2026-10-29 16:56:42
++++ b/drivers/usb/phy/Makefile	2026-10-29 16:56:52
+@@ -19,6 +19,7 @@
+ obj-$(CONFIG_USB_GPIO_VBUS)		+= phy-gpio-vbus-usb.o
+ obj-$(CONFIG_USB_ISP1301)		+= phy-isp1301.o
+ obj-$(CONFIG_USB_MXS_PHY)		+= phy-mxs-usb.o
++obj-$(CONFIG_USB_SPRD_UMS9632_PHY)	+= phy-sprd-ums9632.o
+ obj-$(CONFIG_USB_ULPI)			+= phy-ulpi.o
+ obj-$(CONFIG_USB_ULPI_VIEWPORT)		+= phy-ulpi-viewport.o
+ obj-$(CONFIG_KEYSTONE_USB_PHY)		+= phy-keystone.o
+--- a/drivers/usb/phy/phy-sprd-ums9632.c	1970-01-01 02:00:00
++++ b/drivers/usb/phy/phy-sprd-ums9632.c	2026-10-29 16:58:15
+@@ -0,0 +1,348 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Unisoc UMS9632 USB 2.0 PHY, as a legacy usb_phy for the MUSB glue (musb_sprd.c), peripheral mode only.
++ *
++ * Decoded from the vendor's 6.6 GKI module usb-phy-sprd-hs.ko ("sprd,ums9632-phy": its phy_cfg_7 tables and
++ * phy_v4 ops), with register names from the vendor's GPL qogirl6/qogirn6pro PHY drivers. Two syscons:
++ * AON_APB (aon_apb_regs, 0x64900000) and the analog USB20 block (anlg_phy_g0l_regs, 0x64300000).
++ *
++ * Left out: charger (BC1.2) detection, host mode, the PMIC dp/dm switch and the low-power regulators, refclk_cfg
++ * (not in the board's DT) and the TFREGRES "algorithm" trim (the vendor only does it with sprd,hsphy-tfregres,
++ * which the board's DT does not have). There is no cable detection: VBUS is reported valid from init on.
++ */
++
++#include <linux/bitfield.h>
++#include <linux/bits.h>
++#include <linux/clk.h>
++#include <linux/delay.h>
++#include <linux/err.h>
++#include <linux/mfd/syscon.h>
++#include <linux/module.h>
++#include <linux/nvmem-consumer.h>
++#include <linux/of.h>
++#include <linux/platform_device.h>
++#include <linux/regmap.h>
++#include <linux/regulator/consumer.h>
++#include <linux/reset.h>
++#include <linux/slab.h>
++#include <linux/usb/otg.h>
++#include <linux/usb/phy.h>
++
++/* AON_APB */
++#define AON_SOC_USB_CTRL		0x0190
++#define  AON_USB20_ISO_SW_EN		BIT(4)
++#define AON_OTG_PHY_TEST		0x0204
++#define  AON_OTG_VBUS_VALID_PHYREG	BIT(24)
++#define AON_OTG_PHY_CTRL		0x0208
++#define  AON_UTMI_WIDTH_SEL		BIT(30)		/* 16-bit UTMI */
++#define  AON_USB2_PHY_IDDIG		BIT(3)		/* 1: B-device */
++#define AON_USB20_POWER_CTRL		0x0350		/* MIPI_CSI_POWER_CTRL on the qogirn6pro */
++#define  AON_USB20_PS_PD_S		BIT(1)
++#define  AON_USB20_PS_PD_L		BIT(0)
++
++/* analog USB20 */
++#define ANA_UTMI_CTL1			0x0004
++#define  ANA_DATABUS16_8		BIT(28)
++#define  ANA_VBUSVLDEXT			BIT(16)
++#define  ANA_UTMI_CTL1_RESERVED		GENMASK(15, 0)
++#define ANA_UTMI_CTL2			0x000c
++#define  ANA_DPPULLDOWN			BIT(4)
++#define  ANA_DMPULLDOWN			BIT(3)
++#define ANA_TRIMMING			0x0010
++#define  ANA_TFHSRES			GENMASK(18, 14)
++#define  ANA_TUNEOTG			GENMASK(11, 9)
++#define  ANA_TUNEDSC			GENMASK(8, 7)
++#define ANA_USB20_PHY			0x0018
++#define  ANA_ISO_SW_EN			BIT(0)
++#define ANA_REG_SEL_CFG_0		0x0020
++#define  ANA_DBG_SEL_DPPULLDOWN		BIT(8)
++#define  ANA_DBG_SEL_DMPULLDOWN		BIT(7)
++
++/* the efuse word: trim valid flag and the fields' positions come from sprd,efuse-offset-val */
++#define EFUSE_TRIM_VALID		BIT(30)
++
++struct sprd_ums9632_phy {
++	struct usb_phy		phy;
++	struct regmap		*aon;
++	struct regmap		*ana;
++	struct clk_bulk_data	clks[3];
++	struct reset_control	*rst[2];
++	struct regulator	*vdd;
++	u32			vdd_uv;
++	u32			eye_pattern;
++	bool			inited;
++};
++
++#define to_ums9632_phy(x)	container_of(x, struct sprd_ums9632_phy, phy)
++
++static const char * const sprd_ums9632_rst_names[] = { "phy_rst", "utmi_rst" };
++
++static void sprd_ums9632_set(struct regmap *map, unsigned int reg, unsigned int mask, bool on)
++{
++	regmap_update_bits(map, reg, mask, on ? mask : 0);
++}
++
++/* phy_v4_usb_phy_power_ctrl */
++static void sprd_ums9632_power(struct sprd_ums9632_phy *p, bool on)
++{
++	if (on) {
++		sprd_ums9632_set(p->aon, AON_USB20_POWER_CTRL, AON_USB20_PS_PD_S | AON_USB20_PS_PD_L, false);
++		sprd_ums9632_set(p->ana, ANA_USB20_PHY, ANA_ISO_SW_EN, false);
++		sprd_ums9632_set(p->aon, AON_SOC_USB_CTRL, AON_USB20_ISO_SW_EN, false);
++	} else {
++		sprd_ums9632_set(p->aon, AON_SOC_USB_CTRL, AON_USB20_ISO_SW_EN, true);
++		sprd_ums9632_set(p->ana, ANA_USB20_PHY, ANA_ISO_SW_EN, true);
++		sprd_ums9632_set(p->aon, AON_USB20_POWER_CTRL, AON_USB20_PS_PD_S | AON_USB20_PS_PD_L, true);
++	}
++}
++
++/* phy_v4_usb_vbus_ctrl, which the vendor calls from usb_phy_notify_connect/_disconnect */
++static void sprd_ums9632_vbus(struct sprd_ums9632_phy *p, bool valid)
++{
++	sprd_ums9632_set(p->aon, AON_OTG_PHY_TEST, AON_OTG_VBUS_VALID_PHYREG, valid);
++	sprd_ums9632_set(p->ana, ANA_UTMI_CTL1, ANA_VBUSVLDEXT, valid);
++}
++
++static void sprd_ums9632_reset(struct sprd_ums9632_phy *p, bool assert)
++{
++	int i, ret;
++
++	for (i = 0; i < ARRAY_SIZE(p->rst); i++) {
++		ret = assert ? reset_control_assert(p->rst[i]) : reset_control_deassert(p->rst[i]);
++		if (ret)
++			dev_warn(p->phy.dev, "%s %s: %d\n", sprd_ums9632_rst_names[i],
++				 assert ? "assert" : "deassert", ret);
++	}
++}
++
++static void sprd_ums9632_dump(struct sprd_ums9632_phy *p, const char *when)
++{
++	unsigned int v[9];
++
++	regmap_read(p->aon, AON_SOC_USB_CTRL, &v[0]);
++	regmap_read(p->aon, AON_OTG_PHY_TEST, &v[1]);
++	regmap_read(p->aon, AON_OTG_PHY_CTRL, &v[2]);
++	regmap_read(p->aon, AON_USB20_POWER_CTRL, &v[3]);
++	regmap_read(p->ana, ANA_UTMI_CTL1, &v[4]);
++	regmap_read(p->ana, ANA_UTMI_CTL2, &v[5]);
++	regmap_read(p->ana, ANA_TRIMMING, &v[6]);
++	regmap_read(p->ana, ANA_USB20_PHY, &v[7]);
++	regmap_read(p->ana, ANA_REG_SEL_CFG_0, &v[8]);
++	dev_info(p->phy.dev,
++		 "%s: aon 190=%#x 204=%#x 208=%#x 350=%#x, ana 04=%#x 0c=%#x 10=%#x 18=%#x 20=%#x\n",
++		 when, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]);
++}
++
++/*
++ * The vendor's sprd_hsphy_init, then what its glue does for a B-device with a cable in: sprd_hostphy_set(0)
++ * (phy_v4_set_mode, device) and usb_phy_notify_connect (VBUS valid). The vendor's probe pulsed the resets and
++ * powered the PHY down; here the resets are pulsed once the PHY is powered, as the qogirl6 driver does.
++ */
++static int sprd_ums9632_init(struct usb_phy *x)
++{
++	struct sprd_ums9632_phy *p = to_ums9632_phy(x);
++	int ret;
++
++	if (p->inited)
++		return 0;
++
++	if (p->vdd) {
++		if (p->vdd_uv)
++			regulator_set_voltage(p->vdd, p->vdd_uv, p->vdd_uv);
++		ret = regulator_enable(p->vdd);
++		if (ret)
++			return ret;
++	}
++
++	/* phy_enable_ctrl: otg_phy_eb, otg_ref_eb, dphy_ref_eb */
++	ret = clk_bulk_prepare_enable(ARRAY_SIZE(p->clks), p->clks);
++	if (ret) {
++		if (p->vdd)
++			regulator_disable(p->vdd);
++		return ret;
++	}
++
++	sprd_ums9632_power(p, true);
++
++	/* phy_v4_utmi_width_sel: 16-bit, as no phy_type = "utmi" (8-bit, 60 MHz) is in the DT */
++	sprd_ums9632_set(p->aon, AON_OTG_PHY_CTRL, AON_UTMI_WIDTH_SEL, true);
++	sprd_ums9632_set(p->ana, ANA_UTMI_CTL1, ANA_DATABUS16_8, true);
++
++	sprd_ums9632_reset(p, true);
++	usleep_range(20000, 30000);
++	sprd_ums9632_reset(p, false);
++
++	/* phy_v4_set_mode, device: trim, ID high, D+/D- pull-downs under register control and off */
++	regmap_write(p->ana, ANA_TRIMMING, p->eye_pattern);
++	sprd_ums9632_set(p->aon, AON_OTG_PHY_CTRL, AON_USB2_PHY_IDDIG, true);
++	sprd_ums9632_set(p->ana, ANA_REG_SEL_CFG_0, ANA_DBG_SEL_DPPULLDOWN | ANA_DBG_SEL_DMPULLDOWN, true);
++	sprd_ums9632_set(p->ana, ANA_UTMI_CTL2, ANA_DPPULLDOWN | ANA_DMPULLDOWN, false);
++	regmap_update_bits(p->ana, ANA_UTMI_CTL1, ANA_UTMI_CTL1_RESERVED, 0);
++
++	/* no charger or extcon driver: a peripheral-only board, so the cable is taken as in */
++	sprd_ums9632_vbus(p, true);
++
++	p->inited = true;
++	sprd_ums9632_dump(p, "init");
++
++	return 0;
++}
++
++/* sprd_hsphy_shutdown, with notify_disconnect's VBUS invalid first */
++static void sprd_ums9632_shutdown(struct usb_phy *x)
++{
++	struct sprd_ums9632_phy *p = to_ums9632_phy(x);
++
++	if (!p->inited)
++		return;
++
++	sprd_ums9632_vbus(p, false);
++	sprd_ums9632_reset(p, true);
++	sprd_ums9632_power(p, false);
++	clk_bulk_disable_unprepare(ARRAY_SIZE(p->clks), p->clks);
++	if (p->vdd)
++		regulator_disable(p->vdd);
++	p->inited = false;
++}
++
++/*
++ * sprd_eye_pattern_prepared for this SoC: the trim the PHY has now, with the efuse's fields over it when the
++ * "usb20_eyepattern" cell is there and marked valid. Without it (no efuse driver yet) the trim stays as it is.
++ */
++static void sprd_ums9632_eye_pattern(struct sprd_ums9632_phy *p, struct device *dev)
++{
++	struct device_node *np = dev->of_node;
++	struct nvmem_cell *cell;
++	u32 off[3], efuse = 0;
++	size_t len;
++	void *buf;
++	u8 tunedsc;
++
++	regmap_read(p->ana, ANA_TRIMMING, &p->eye_pattern);
++
++	if (of_property_read_u32_array(np, "sprd,efuse-offset-val", off, ARRAY_SIZE(off)))
++		goto out;
++	cell = nvmem_cell_get(dev, "usb20_eyepattern");
++	if (IS_ERR(cell)) {
++		dev_info(dev, "usb20_eyepattern efuse: not available (%ld)\n", PTR_ERR(cell));
++		goto out;
++	}
++	buf = nvmem_cell_read(cell, &len);
++	nvmem_cell_put(cell);
++	if (IS_ERR(buf)) {
++		dev_info(dev, "usb20_eyepattern efuse: not read (%ld)\n", PTR_ERR(buf));
++		goto out;
++	}
++	memcpy(&efuse, buf, min(len, sizeof(efuse)));
++	kfree(buf);
++	if (!(efuse & EFUSE_TRIM_VALID)) {
++		dev_info(dev, "usb20_eyepattern efuse %#x: not trimmed\n", efuse);
++		goto out;
++	}
++
++	p->eye_pattern &= ~ANA_TUNEOTG;
++	p->eye_pattern |= FIELD_PREP(ANA_TUNEOTG, (efuse >> off[2]) & 0x7);
++	if (!of_property_read_u8(np, "sprd,hsphy-tunedec", &tunedsc)) {
++		p->eye_pattern &= ~ANA_TUNEDSC;
++		p->eye_pattern |= FIELD_PREP(ANA_TUNEDSC, tunedsc);
++	}
++	p->eye_pattern &= ~ANA_TFHSRES;
++	p->eye_pattern |= FIELD_PREP(ANA_TFHSRES, (efuse >> off[0]) & 0x1f);
++out:
++	dev_info(dev, "device eye pattern %#x (efuse %#x)\n", p->eye_pattern, efuse);
++}
++
++static int sprd_ums9632_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct sprd_ums9632_phy *p;
++	struct usb_otg *otg;
++	int i, ret;
++
++	p = devm_kzalloc(dev, sizeof(*p), GFP_KERNEL);
++	otg = devm_kzalloc(dev, sizeof(*otg), GFP_KERNEL);
++	if (!p || !otg)
++		return -ENOMEM;
++	p->phy.dev = dev;
++
++	p->aon = syscon_regmap_lookup_by_phandle(dev->of_node, "sprd,syscon-aonapb");
++	if (IS_ERR(p->aon))
++		return dev_err_probe(dev, PTR_ERR(p->aon), "sprd,syscon-aonapb\n");
++	p->ana = syscon_regmap_lookup_by_phandle(dev->of_node, "sprd,syscon-ana");
++	if (IS_ERR(p->ana))
++		return dev_err_probe(dev, PTR_ERR(p->ana), "sprd,syscon-ana\n");
++
++	/* the board's DT names only otg_ref_eb (aon-gate 0x3d); the others are there on other SoCs */
++	p->clks[0].id = "otg_phy_eb";
++	p->clks[1].id = "otg_ref_eb";
++	p->clks[2].id = "dphy_ref_eb";
++	ret = devm_clk_bulk_get_optional(dev, ARRAY_SIZE(p->clks), p->clks);
++	if (ret)
++		return dev_err_probe(dev, ret, "clocks\n");
++
++	/*
++	 * Exclusive: the glue leaves them alone when it has this PHY. Released now, as the glue did without a PHY,
++	 * so the controller's registers can be reached before usb_phy_init; init pulses them.
++	 */
++	for (i = 0; i < ARRAY_SIZE(p->rst); i++) {
++		p->rst[i] = devm_reset_control_get_optional_exclusive(dev, sprd_ums9632_rst_names[i]);
++		if (IS_ERR(p->rst[i]))
++			return dev_err_probe(dev, PTR_ERR(p->rst[i]), "%s\n", sprd_ums9632_rst_names[i]);
++	}
++	sprd_ums9632_reset(p, false);
++
++	/* the board's DT has no vdd-supply (the vendor gets a dummy), so none is fine */
++	p->vdd = devm_regulator_get_optional(dev, "vdd");
++	if (IS_ERR(p->vdd)) {
++		if (PTR_ERR(p->vdd) == -EPROBE_DEFER)
++			return -EPROBE_DEFER;
++		p->vdd = NULL;
++	}
++	of_property_read_u32(dev->of_node, "sprd,vdd-voltage", &p->vdd_uv);
++
++	sprd_ums9632_dump(p, "probe");
++	sprd_ums9632_eye_pattern(p, dev);
++
++	p->phy.label = "sprd-ums9632-phy";
++	p->phy.type = USB_PHY_TYPE_USB2;
++	p->phy.otg = otg;
++	p->phy.init = sprd_ums9632_init;
++	p->phy.shutdown = sprd_ums9632_shutdown;
++	otg->usb_phy = &p->phy;
++	otg->state = OTG_STATE_UNDEFINED;
++
++	platform_set_drvdata(pdev, p);
++
++	ret = usb_add_phy_dev(&p->phy);
++	if (ret)
++		return dev_err_probe(dev, ret, "cannot add the usb_phy\n");
++
++	return 0;
++}
++
++static void sprd_ums9632_remove(struct platform_device *pdev)
++{
++	struct sprd_ums9632_phy *p = platform_get_drvdata(pdev);
++
++	usb_remove_phy(&p->phy);
++	sprd_ums9632_shutdown(&p->phy);
++}
++
++static const struct of_device_id sprd_ums9632_phy_of_match[] = {
++	{ .compatible = "sprd,ums9632-phy" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, sprd_ums9632_phy_of_match);
++
++static struct platform_driver sprd_ums9632_phy_driver = {
++	.probe	= sprd_ums9632_probe,
++	.remove	= sprd_ums9632_remove,
++	.driver	= {
++		.name		= "sprd-ums9632-phy",
++		.of_match_table	= sprd_ums9632_phy_of_match,
++	},
++};
++module_platform_driver(sprd_ums9632_phy_driver);
++
++MODULE_DESCRIPTION("Unisoc UMS9632 USB 2.0 PHY (peripheral)");
++MODULE_LICENSE("GPL");

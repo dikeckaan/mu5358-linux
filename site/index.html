@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var t=localStorage.getItem("mu5358-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<title>MU5358 Linux: OpenWrt on the ZTE U30 Pro 5G hotspot</title>
+<meta name="description" content="OpenWrt next to Android on the ZTE U30 Pro (MU5358, Unisoc UMS9632) 5G hotspot, with its round screen as a control panel. A working research port, not yet an installer.">
+<link rel="canonical" href="https://kaandikec.com/mu5358-linux/">
+<link rel="alternate" hreflang="en" href="https://kaandikec.com/mu5358-linux/">
+<link rel="alternate" hreflang="tr" href="https://kaandikec.com/mu5358-linux/tr/">
+<link rel="alternate" hreflang="x-default" href="https://kaandikec.com/mu5358-linux/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="MU5358 Linux">
+<meta property="og:title" content="MU5358 Linux: OpenWrt on the ZTE U30 Pro 5G hotspot">
+<meta property="og:description" content="OpenWrt next to Android on the ZTE U30 Pro (UMS9632), with its round screen as a control panel. A working research port.">
+<meta property="og:url" content="https://kaandikec.com/mu5358-linux/">
+<meta property="og:image" content="https://kaandikec.com/mu5358-linux/assets/img/ui-home.png">
+<meta name="theme-color" content="#f3f6fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d1520" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&amp;family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&amp;display=swap">
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#content">Skip to the content</a>
+<header class="site-header">
+<div class="wrap">
+<a class="brand" href="./"><svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="26" fill="none" stroke="currentColor" stroke-width="4"/><circle cx="32" cy="15" r="5" fill="#2259d6"/><circle cx="49" cy="32" r="5" fill="#f2b23a"/><circle cx="32" cy="49" r="5" fill="#3fae6a"/><circle cx="15" cy="32" r="5" fill="currentColor"/><circle cx="32" cy="32" r="7" fill="none" stroke="#f2b23a" stroke-width="3.5"/></svg>MU5358 Linux</a>
+<nav class="site-nav" id="site-nav" aria-label="Main">
+<a href="#works">What works</a>
+<a href="#screen">The screen</a>
+<a href="#how">How it boots</a>
+<a href="#build">Build it</a>
+<a href="https://github.com/dikeckaan/mu5358-linux">GitHub</a>
+<span class="langs" role="group" aria-label="Language"><a href="./" hreflang="en" lang="en" aria-current="true">English</a><a href="tr/" hreflang="tr" lang="tr">Türkçe</a></span>
+</nav>
+<button class="theme-btn" type="button" hidden data-labels="Theme|Auto|Light|Dark|follows your system|Change the colour theme"><svg class="i-auto" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg><svg class="i-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><svg class="i-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span class="theme-name"></span></button>
+<button class="menu-btn" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
+</div>
+</header>
+<main id="content">
+
+<section class="hero">
+<div class="wrap">
+<div>
+<h1>The U30 Pro, as a Linux router with its own screen</h1>
+<p class="lede"><strong>OpenWrt</strong> next to Android on the ZTE U30 Pro (MU5358, Unisoc UMS9632). Mobile data,
+Wi-Fi 6 hotspot, SSH over USB, and the hotspot's round screen as a light control panel that looks like its Android
+launcher. Android stays, and every reboot goes back to it by itself.</p>
+<div class="actions">
+<a class="btn primary" href="#status">Read the status first</a>
+<a class="btn" href="https://github.com/dikeckaan/mu5358-linux">Source on GitHub</a>
+<a class="btn sponsor" href="https://github.com/sponsors/dikeckaan"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path fill="currentColor" d="M8 14.2 6.9 13.2C3 9.7.5 7.4.5 4.6.5 2.4 2.2.7 4.4.7c1.2 0 2.4.6 3.1 1.5C8.2 1.3 9.4.7 10.6.7c2.2 0 3.9 1.7 3.9 3.9 0 2.8-2.5 5.1-6.4 8.6z"/></svg>Sponsor</a>
+</div>
+<p class="sponsor-note">The sibling of <a href="https://kaandikec.com/mu300-linux/">MU300 Linux</a> (ZTE F50 and U30 Air), by the same one person in Turkey.</p>
+</div>
+<img class="hero-shot" src="assets/img/ui-home.png" width="240" height="240" alt="The home screen of the U30 Pro under Linux: a clock with a battery ring in the middle, four round petals around it (WiFi, Mesaj, Pil, Ayar)">
+</div>
+</section>
+
+<section>
+<div class="wrap prose">
+
+<h2 id="status">Status: a working research port</h2>
+<div class="callout warn"><strong>No installer, no release yet.</strong> Everything here was brought up and tested
+on one rooted unit, by hand, with the scripts in the repository. It is published so that the work is visible and
+others can follow it. If you are not comfortable with adb, Magisk root, partitions and a serial console, wait for an
+installer.</div>
+<p>What it already does well: a 3-hour soak with every check green (USB, network registration, mobile data, ping,
+Wi-Fi), no kernel oops, the NV partitions byte-for-byte unchanged and memory flat; six reboot cycles in a row with
+everything coming up by itself.</p>
+
+<h2 id="works">What works</h2>
+<ul class="dots">
+<li><strong>Mobile data (LTE)</strong>Android's own modem daemons in a chroot, as on MU300 Linux. 14-19 Mbit/s where Android did 11-12 on the same spot.</li>
+<li><strong>Wi-Fi 6 hotspot</strong>AIC8800D80X2, 5 GHz, HE80, WPA2, with the board's own MAC and calibration.</li>
+<li><strong>The screen</strong>A control panel in the look of the U30 launcher: status, Wi-Fi with a QR code to join, SMS, battery, settings, clients, signal, power actions, system and log. 1.5 MB, about 6 MB of RAM.</li>
+<li><strong>Buttons</strong>Power: screen on/off, held: power off. Wi-Fi key held: hotspot off/on.</li>
+<li><strong>USB network and SSH</strong>Plug it into a computer: <code>ssh root@192.168.58.1</code>, plus a serial console.</li>
+<li><strong>GPU</strong>Mali-G57 with OpenGL ES 3.2, EGL 1.5 and Vulkan through Android's driver, loaded on demand.</li>
+<li class="g"><strong>Android stays</strong>Linux only ever starts as a one-shot trial; reboot, power-off, a kernel oops or a failed boot all land in Android.</li>
+<li class="r"><strong>Not yet</strong>Suspend and power saving, charging verified below 100 %, long battery-only runs, Bluetooth, NFC, SIM tray detection, USB OTG, calls and audio, sending SMS, OpenCL.</li>
+</ul>
+
+<h2 id="screen">The screen</h2>
+<p>The U30 Pro has a round 240×240 screen and a touch panel. Under Linux it runs <code>u30ui</code>, written in C
+straight onto the kernel's DRM: the same petals, colours and pages as the U30's Android launcher, without Android.
+Locked at start (hold to open), off after a minute, on again with the power key. The pictures below are its host
+preview with sample data.</p>
+<ul class="shots">
+<li><figure><img src="assets/img/ui-home-locked.png" width="240" height="240" alt="The locked home screen with a padlock" loading="lazy"><figcaption>Locked (hold to open)</figcaption></figure></li>
+<li><figure><img src="assets/img/ui-status.png" width="240" height="240" alt="Status page: operator, signal bars, download and upload rate, battery and number of clients" loading="lazy"><figcaption>Status</figcaption></figure></li>
+<li><figure><img src="assets/img/ui-wifi.png" width="240" height="240" alt="Wi-Fi page: network name, password and connected devices" loading="lazy"><figcaption>Wi-Fi</figcaption></figure></li>
+<li><figure><img src="assets/img/ui-wifi-qr.png" width="240" height="240" alt="A QR code to join the hotspot with a phone camera" loading="lazy"><figcaption>Join by QR code</figcaption></figure></li>
+<li><figure><img src="assets/img/ui-sms.png" width="240" height="240" alt="Messages page with two SMS" loading="lazy"><figcaption>SMS</figcaption></figure></li>
+<li><figure><img src="assets/img/ui-battery.png" width="240" height="240" alt="Battery page: a ring at 87 percent, current, voltage and temperature" loading="lazy"><figcaption>Battery</figcaption></figure></li>
+<li><figure><img src="assets/img/ui-settings.png" width="240" height="240" alt="Settings: screen timeout, lock, hotspot, mobile data" loading="lazy"><figcaption>Settings</figcaption></figure></li>
+<li><figure><img src="assets/img/ui-signal.png" width="240" height="240" alt="Signal page: RSRP, RSRQ, WAN address and traffic" loading="lazy"><figcaption>Signal</figcaption></figure></li>
+<li><figure><img src="assets/img/ui-actions.png" width="240" height="240" alt="Power actions: restart, power off, cut data, screen off, each needs a one-second hold" loading="lazy"><figcaption>Power actions</figcaption></figure></li>
+<li><figure><img src="assets/img/ui-system.png" width="240" height="240" alt="System page: CPU, RAM, storage, uptime and SoC temperature" loading="lazy"><figcaption>System</figcaption></figure></li>
+<li><figure><img src="assets/img/ui-clients.png" width="240" height="240" alt="Clients page: connected devices with their addresses" loading="lazy"><figcaption>Clients</figcaption></figure></li>
+<li><figure><img src="assets/img/ui-sms-open.png" width="240" height="240" alt="One SMS opened in full" loading="lazy"><figcaption>A message, opened</figcaption></figure></li>
+</ul>
+<p>One detail worth telling: the panel is mounted upside down, and turning the picture on the CPU made every moving
+frame tear, because the rows then reached the panel against its own scan direction. Now the panel turns the picture
+itself (its MADCTL register, set by a tiny kernel module) and the tearing is gone.</p>
+
+<h2 id="how">How it boots</h2>
+<ol class="steps">
+<li><h3>Android asks for slot b, once</h3><p>From rooted Android, a one-shot "try slot b" request goes into the <code>misc</code> partition.</p></li>
+<li><h3>LK starts slot b</h3><p>The board's own GKI 6.6 kernel, rebuilt with a small fragment, with our <code>init_boot_b</code> ramdisk.</p></li>
+<li><h3>The ramdisk takes it back at once</h3><p>It loads the vendor modules, brings up USB and puts <code>misc</code> back to Android 1.6 seconds in, before anything can go wrong.</p></li>
+<li><h3>OpenWrt starts</h3><p>From its own region of the eMMC behind <code>userdata</code>. The modem gets the NV partitions only as copies in RAM; the real NV is never written.</p></li>
+</ol>
+<p>Slot a and the NV partitions are never written. Any reboot, power-off, kernel oops (the kernel restarts on one) or
+failed boot ends in Android.</p>
+
+<h2 id="build">Build it</h2>
+<p>For people who want to follow the work. Every step runs from a computer with Docker and adb, against a rooted
+U30 Pro, after a full backup.</p>
+<ol>
+<li><strong>Back up everything</strong>: <code>tools/backup-full.sh OUTDIR</code> (every partition, checked against hashes taken on the device).</li>
+<li><strong>Kernel</strong>: <code>kernel/build.sh</code> in <code>kernel/Dockerfile</code>'s container (GKI android15-6.6 at the device's own commit, plus <code>kernel/mu5358-linux.fragment</code>).</li>
+<li><strong>Boot images</strong>: <code>boot/build-initboot.py</code> makes <code>init_boot_b</code> (and <code>boot_b</code>) from the stock images and <code>boot/init</code>.</li>
+<li><strong>Root file system</strong>: <code>openwrt/build-rootfs.sh</code> from MU300 Linux's OpenWrt release; <code>openwrt/customize.sh</code> makes it this board's.</li>
+<li><strong>Android's files</strong> (modem daemons, firmware, GPU driver): pulled from your own device by the scripts in <code>modem/</code> and <code>gpu/</code>. They are not in the repository.</li>
+</ol>
+<p>The system as it runs (services, hardware status, known behaviour, where the logs are) is in
+<a href="https://github.com/dikeckaan/mu5358-linux/blob/main/docs/GKI-SYSTEM.md">docs/GKI-SYSTEM.md</a>.</p>
+
+<h2 id="faq">Questions people ask</h2>
+<details class="faq"><summary>Is it the same as MU300 Linux?</summary><div><p>It is built on MU300 Linux's OpenWrt and
+its modem tools, but the U30 Pro is a different chip (UMS9632), a different Wi-Fi chip, a screen and a touch panel,
+and a newer Android (15) with a GKI kernel. So the kernel side, the boot path, the modem's NV handling, Wi-Fi and
+everything on the screen are new. MU300 Linux does not support the U30 Pro.</p></div></details>
+<details class="faq"><summary>Can it brick my device?</summary><div><p>The project never writes slot a or the NV
+partitions, and Linux is never made the default boot. Still, writing partitions on a rooted device is never without
+risk; that is why the first step is a full backup.</p></div></details>
+<details class="faq"><summary>Why OpenWrt and not Ubuntu?</summary><div><p>It is light (the whole system idles in a
+few dozen MB), it is a router first, and MU300 Linux's OpenWrt already brings the modem tools. Ubuntu may come
+later.</p></div></details>
+<details class="faq"><summary>When will there be an installer?</summary><div><p>After battery-only operation and
+charging are verified and a 24-hour soak passes. Follow the repository for news.</p></div></details>
+
+</div>
+</section>
+</main>
+<footer class="site-footer">
+<div class="wrap">
+<div>
+<h2>The project</h2>
+<ul>
+<li><a href="https://github.com/dikeckaan/mu5358-linux">Source code on GitHub</a></li>
+<li><a href="https://github.com/sponsors/dikeckaan">Support the project</a></li>
+<li><a href="https://kaandikec.com/mu300-linux/">MU300 Linux (ZTE F50, U30 Air)</a></li>
+</ul>
+</div>
+<div>
+<h2>Help</h2>
+<ul>
+<li><a href="https://github.com/dikeckaan/mu5358-linux/issues">Report a problem</a></li>
+<li><a href="https://t.me/mu300project">Telegram channel (news)</a></li>
+</ul>
+</div>
+<div>
+<p>A hobby project, at your own risk, with no warranty. Not endorsed by ZTE, Unisoc or any operator. Scripts and documentation: MIT; kernel modules and patches: GPL-2.0.</p>
+</div>
+</div>
+</footer>
+</body>
+</html>
