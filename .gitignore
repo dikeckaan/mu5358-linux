@@ -34,3 +34,4 @@ docs/RAPOR-*.md
 installer/gpt-userdata
 installer/f2fs-shrink
 tools/u30ui2/u30ui2
+tools/charge/mu5358-charge
