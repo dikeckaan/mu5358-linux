@@ -41,6 +41,13 @@ adopted under the mu5358 name; no telnet; the rest to be applied):
 11. A5 `mu5358-power` - to do (service present, not linked)
 12. D2 tests + CI - **done**: `tests/` (46 Python tests: the hard rules as static checks, the installer's helpers
     under busybox, the web installer under node; 31 node tests) and `.github/workflows/tests.yml`
+12b. D4 the release workflow - **done 2026-10-31**: `.github/workflows/release.yml` + `tools/ci-release.sh` on
+    `ubuntu-24.04-arm`: the kernel from the ACK commit (shallow, `.git` removed, the release string and every
+    exported symbol's CRC checked against `kernel/Module.symvers`), the tools in the same images as on the Mac,
+    busybox from Ubuntu's `busybox-static` (byte-identical to mu300's), the rootfs by its digest, the signature
+    with the secret `MU5358_RELEASE_KEY`, the GitHub release (prerelease by default, assets' digests checked
+    back), then the mirror. `gltest` is a prebuilt (`gpu/prebuilt`: it links against the device's Mali library);
+    the two Android tools are musl static builds there instead of the NDK's
 12a. D5 the release mirror - **done 2026-10-31**: the page downloads a release's files itself (`mirror.js`,
     `config.js`), from the branch `mirror/<tag>` of this repository on raw.githubusercontent.com (parts of at
     most 45 MiB, `tools/make-release-mirror.sh`, pushed by `tools/publish-mirror.sh`; no second repository and no

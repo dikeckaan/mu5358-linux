@@ -419,3 +419,33 @@ class Rebranded(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ReleaseWorkflow(unittest.TestCase):
+    """The Release workflow and tools/ci-release.sh: main only, the key required, the kernel pinned to the commit
+    kernel/build.sh names, the release string the vendor modules were loaded into, and the mirror after the release."""
+
+    def setUp(self):
+        self.wf = (TOP / '.github/workflows/release.yml').read_text(encoding='utf-8')
+        self.ci = (TOP / 'tools/ci-release.sh').read_text(encoding='utf-8')
+
+    def test_workflow_runs_on_arm64_from_main_with_the_key_and_contents_write(self):
+        self.assertIn('runs-on: ubuntu-24.04-arm', self.wf)
+        self.assertIn('workflow_dispatch:', self.wf)
+        self.assertNotIn('\n  push:', self.wf, 'a release is only ever made when asked')
+        self.assertIn('refs/heads/main', self.wf)
+        self.assertIn('contents: write', self.wf)
+        self.assertIn('secrets.MU5358_RELEASE_KEY', self.wf)
+        self.assertIn('tools/ci-release.sh', self.wf)
+        # inputs reach the shell through the environment, never inline in a run: line
+        for m in re.finditer(r'run: (.*)', self.wf):
+            self.assertNotIn('inputs.tag', m.group(1))
+
+    def test_ci_release_pins_the_kernel_commit_of_build_sh(self):
+        short = re.search(r'android15-6\.6 at ([0-9a-f]{12})', (TOP / 'kernel/build.sh').read_text(encoding='utf-8')).group(1)
+        full = re.search(r'^ACK_COMMIT=([0-9a-f]{40})', self.ci, re.M).group(1)
+        self.assertTrue(full.startswith(short), f'{full} is not {short}')
+        self.assertIn('KREL_WANT=6.6.98-android15-8-mu5358-4k', self.ci)
+        self.assertIn('kernel/Module.symvers', self.ci)
+        self.assertIn('MU5358_REQUIRE_SIGNATURE=1', self.ci)
+        self.assertLess(self.ci.rindex('gh release create'), self.ci.rindex('tools/publish-mirror.sh'))

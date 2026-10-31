@@ -3,7 +3,8 @@
 # files in parts and a manifest (tools/make-release-mirror.sh), which raw.githubusercontent.com serves to the page
 # (site/assets/web-installer/config.js names the address; mirror.js reads it).
 #   tools/publish-mirror.sh TAG [REMOTE]
-# from work/release/TAG, after the release itself is on GitHub (the page only offers a mirror of a release it sees).
+# from work/release/TAG, after the release itself is on GitHub (the page only offers a mirror of a release it sees):
+# the last step of the Release workflow (tools/ci-release.sh --publish), or a maintainer's for a release made by hand.
 # A branch of its own, with no history (one commit, force-pushed): the repository's main history never carries
 # the files. The branches of the newest release and the newest prerelease are kept, every other mirror/* branch
 # is deleted, so that the repository stays small (a release is about 73 MB; GitHub prunes what no branch holds).

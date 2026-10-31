@@ -1,0 +1,72 @@
+name: Release
+
+# The whole release on a GitHub arm64 runner, from the sources alone (tools/ci-release.sh): the GKI kernel at the
+# device's own commit, the tools, the OpenWrt image on mu300-linux's rootfs, the signed SHA256SUMS (the repository
+# secret MU5358_RELEASE_KEY: the project's usign key, whose public half is installer/release.pub), the GitHub
+# release and the web installer's mirror branch. Actions > Release > Run workflow on main, with the tag left empty
+# (the next one of today, vYYYY.MM.DD.N, tools/next-tag.sh) or given (then it must be of today, in that form, and
+# new): a prerelease by default, which the web installer lists as a test release but does not propose until it
+# is promoted on GitHub (gh release edit TAG --prerelease=false --latest). The release's commit is the main commit
+# the workflow ran on; the job refuses another ref and an existing tag or release. It only ever runs when asked.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag: empty for the next one of today (vYYYY.MM.DD.N), or that tag of today'
+        required: false
+        default: ''
+      prerelease:
+        description: 'Publish as a prerelease (a test release)'
+        type: boolean
+        default: true
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 300
+    permissions:
+      contents: write   # the release, its assets, the mirror branch
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: main only
+        run: |
+          [ "$GITHUB_REF" = refs/heads/main ] || { echo "a release is made from main, not from $GITHUB_REF"; exit 1; }
+      - uses: actions/checkout@v4
+      - name: git may push with the workflow's token (the mirror branch is pushed from a repository of its own)
+        run: gh auth setup-git
+      - name: the tag
+        env:
+          MU5358_TAG: ${{ inputs.tag }}
+        run: |
+          TAG=$(sh tools/next-tag.sh "$GITHUB_REPOSITORY")
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "release $TAG from $GITHUB_SHA"
+      - name: the key
+        env:
+          MU5358_RELEASE_KEY: ${{ secrets.MU5358_RELEASE_KEY }}
+        run: |
+          [ -n "$MU5358_RELEASE_KEY" ] || { echo "the repository secret MU5358_RELEASE_KEY is not set: a release must be signed (tools/release-keygen.py, installer/release.pub)"; exit 1; }
+      - name: what the runner has
+        run: |
+          uname -m; nproc; free -g | head -2; df -h / | tail -1
+          docker --version; gh --version | head -1; python3 --version
+      - name: build and publish
+        env:
+          MU5358_RELEASE_KEY: ${{ secrets.MU5358_RELEASE_KEY }}
+        run: bash tools/ci-release.sh "$TAG" --publish ${{ inputs.prerelease && '--prerelease' || '' }}
+      - name: the build's record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ env.TAG }}-record
+          path: |
+            work/ci/
+            kernel/build.log
+            kernel/merge.log
+          if-no-files-found: ignore
+          retention-days: 30

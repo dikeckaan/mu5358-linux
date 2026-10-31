@@ -5,7 +5,7 @@
 set -e
 dpkg -s libc6-dev-arm64-cross >/dev/null 2>&1 ||
     { apt-get update -qq && apt-get install -y -qq libc6-dev-arm64-cross linux-libc-dev-arm64-cross >/dev/null; }
-F=/src/linux-6.18.59/lib/fonts/font_6x10.c
+F=${FONT:-/src/linux-6.18.59/lib/fonts/font_6x10.c}   # the Release workflow names the GKI tree's copy, the same file
 {
     echo "/* from the kernel's $(basename $F) (GPL-2.0) */"
     echo "static const unsigned char fontdata_6x10[] = {"

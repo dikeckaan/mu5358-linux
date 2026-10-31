@@ -59,10 +59,13 @@ Slot a and the NV partitions are never written.
 | `docs/GKI-SYSTEM.md` | the system as it runs: services, hardware status, known behaviour, logs |
 
 Releases are signed (`SHA256SUMS.sig`, the project's usign key `installer/release.pub`, number
-`15fd2f702186c19e`): the web installer refuses a release without a valid signature. The page downloads a release's
-files itself from the project's mirror, the branch `mirror/<tag>` of this repository (`tools/publish-mirror.sh` after
-each release; GitHub's own release downloads cannot be read by a page), and falls back to files the user picks.
-`tests/` holds the rules this
+`15fd2f702186c19e`): the web installer refuses a release without a valid signature. Releases are built by the
+Release workflow (`.github/workflows/release.yml`, `tools/ci-release.sh`) on a GitHub arm64 runner from the sources
+alone: the GKI kernel at the device's commit, the tools, the image on mu300-linux's rootfs, the signature with the
+repository's secret key, then the GitHub release and the mirror branch `mirror/<tag>` the page downloads the files
+from (GitHub's own release downloads cannot be read by a page; files the user picks remain the fallback). A new
+release is a prerelease until promoted on GitHub; the page lists it as a test release and proposes the newest
+promoted one. `tests/` holds the rules this
 project keeps as tests (`python3 -m unittest discover -s tests`, `node --test tests/web/`), run by
 `.github/workflows/tests.yml`.
 

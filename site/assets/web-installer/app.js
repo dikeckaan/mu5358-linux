@@ -312,7 +312,9 @@ async function loadReleaseList() {
       S.signKey = releaseKey(demo.DEMO_PUB);
       S.releases = [(await demo.demoRelease(DEMO)).release];
     } else S.releases = await loadReleases();
-    if (S.releases.length && !S.relTag) S.relTag = S.releases[0].tag;
+    // the newest release that is not a test release is the one proposed; test releases (prereleases) are in the
+    // list for whoever asks for one, marked
+    if (S.releases.length && !S.relTag) S.relTag = (S.releases.find((r) => !r.prerelease) || S.releases[0]).tag;
   } catch (e) { S.relError = explainError(e); S.releases = []; }
   render();
   await probeMirror();
