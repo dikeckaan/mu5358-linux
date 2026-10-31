@@ -6,7 +6,7 @@ MU300 and U30 Air, UMS9620), and built on its OpenWrt release.
 
 Website: **https://kaandikec.com/mu5358-linux/** (English, Türkçe, 中文)
 
-> **Status: a working research port, not a product.** A web installer exists (`site/web-installer`, `installer/`) and is tested over plain adb on one unit, not yet from the browser; there is no release yet. Everything here
+> **Status: a working research port, not a product.** A web installer exists (`site/web-installer`, `installer/`; the first release is v2026.10.30.7) and is tested over plain adb on one unit, not yet from the browser. Everything here
 > was brought up and tested on one rooted unit. Linux only ever starts as a **one-shot trial from slot b**: the
 > next reboot or power-off is Android again, by itself. Read the whole page before you try anything.
 
@@ -59,7 +59,10 @@ Slot a and the NV partitions are never written.
 | `docs/GKI-SYSTEM.md` | the system as it runs: services, hardware status, known behaviour, logs |
 
 Releases are signed (`SHA256SUMS.sig`, the project's usign key `installer/release.pub`, number
-`15fd2f702186c19e`): the web installer refuses a release without a valid signature. `tests/` holds the rules this
+`15fd2f702186c19e`): the web installer refuses a release without a valid signature. The page downloads a release's
+files itself from the project's mirror, the branch `mirror/<tag>` of this repository (`tools/publish-mirror.sh` after
+each release; GitHub's own release downloads cannot be read by a page), and falls back to files the user picks.
+`tests/` holds the rules this
 project keeps as tests (`python3 -m unittest discover -s tests`, `node --test tests/web/`), run by
 `.github/workflows/tests.yml`.
 

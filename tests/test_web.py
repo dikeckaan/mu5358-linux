@@ -121,3 +121,41 @@ class Pages(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class Mirror(unittest.TestCase):
+    """config.js's MIRROR_BASE and the pages' Content-Security-Policy belong together: a mirror on
+    raw.githubusercontent.com needs that host in connect-src, and no mirror means no such host."""
+
+    def base(self):
+        m = re.search(r'export const MIRROR_BASE = "([^"]*)"', (WI / 'config.js').read_text(encoding='utf-8'))
+        self.assertIsNotNone(m, 'config.js names MIRROR_BASE')
+        return m.group(1)
+
+    def test_mirror_base_is_this_projects_raw_address_or_empty(self):
+        base = self.base()
+        if base:
+            self.assertRegex(base, r'^https://raw\.githubusercontent\.com/[A-Za-z0-9._-]+/mu5358-linux(-mirror)?/(refs/heads/[A-Za-z0-9._-]+/)?$')
+
+    def test_csp_connect_src_matches_the_mirror(self):
+        base = self.base()
+        for lang, p in PAGES.items():
+            html = p.read_text(encoding='utf-8')
+            m = re.search(r'connect-src ([^;]*);', html)
+            self.assertIsNotNone(m, f'{rel(p)} has connect-src')
+            hosts = m.group(1).split()
+            self.assertIn("'self'", hosts)
+            self.assertIn('https://api.github.com', hosts)
+            if base:
+                self.assertIn('https://raw.githubusercontent.com', hosts, rel(p))
+            else:
+                self.assertNotIn('https://raw.githubusercontent.com', hosts, rel(p))
+            for host in hosts:
+                self.assertIn(host, ("'self'", 'https://api.github.com', 'https://raw.githubusercontent.com'), f'{rel(p)} connects to {host}')
+
+    def test_make_release_mirror_names_the_release_files(self):
+        script = (TOP / 'tools/make-release-mirror.sh').read_text(encoding='utf-8')
+        github = (WI / 'github.js').read_text(encoding='utf-8')
+        names = re.findall(r'"([A-Za-z0-9._-]+\.(?:gz|sh|txt|sig)|SHA256SUMS)"', github[github.index('export const F = {'):github.index('};', github.index('export const F = {'))])
+        files = re.search(r'^FILES="([^"]+)"', script, re.M).group(1).split()
+        self.assertEqual(sorted(files), sorted(set(names)))

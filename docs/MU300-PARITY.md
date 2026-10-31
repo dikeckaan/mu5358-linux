@@ -39,8 +39,14 @@ adopted under the mu5358 name; no telnet; the rest to be applied):
     screen's settings, the web server's own key), then `boot_b`/`init_boot_b`; misc never; a downgrade refused.
     Verified 2026-10-30 (v2026.10.30.5 → .6 with the settings intact). From Linux: still to do
 11. A5 `mu5358-power` - to do (service present, not linked)
-12. D2 tests + CI - **done**: `tests/` (43 Python tests: the hard rules as static checks, the installer's helpers
-    under busybox, the web installer under node; 22 node tests) and `.github/workflows/tests.yml`
+12. D2 tests + CI - **done**: `tests/` (46 Python tests: the hard rules as static checks, the installer's helpers
+    under busybox, the web installer under node; 31 node tests) and `.github/workflows/tests.yml`
+12a. D5 the release mirror - **done 2026-10-31**: the page downloads a release's files itself (`mirror.js`,
+    `config.js`), from the branch `mirror/<tag>` of this repository on raw.githubusercontent.com (parts of at
+    most 45 MiB, `tools/make-release-mirror.sh`, pushed by `tools/publish-mirror.sh`; no second repository and no
+    deploy key, unlike mu300), every part and file checked against GitHub's digest and then the signed SHA256SUMS
+    as a picked file would be; picked files stay the fallback. The device's own download (mu300's `run fetch`)
+    is still to do: it costs the SIM's data
 13. E1 screen UI strings en/tr/zh - **done** (`tools/u30ui2`, the dashboard)
 14. A6 Wi-Fi self-healing - **partly**: `mu5358-wifiwatch` (`openwrt/wifiwatch`: hostapd/wlan0 watched, `wifi up`
     after three misses, once in 10 min); the firmware-reset signature of the AIC8800 and regdb still to look at

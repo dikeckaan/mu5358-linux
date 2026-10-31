@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- This page talks to a device over USB. Its policy: scripts and styles from this site only, and no connection
      to anything but this site and GitHub's API. (The hash is the theme script below; no web fonts on this page.) -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-soKh/tpEPakmmFYz71tBkGNCxZ3QCWXshSiSGpHasJk='; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.github.com; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-soKh/tpEPakmmFYz71tBkGNCxZ3QCWXshSiSGpHasJk='; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.github.com https://raw.githubusercontent.com; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <script>try{var t=localStorage.getItem("mu5358-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 <title>网页安装器：在浏览器中为中兴 U30 Pro 安装 OpenWrt</title>
@@ -88,13 +88,13 @@
 <li><strong>Windows、macOS 或 Linux 上的 Chrome、Edge 或其他 Chromium 浏览器。</strong>Firefox 和 Safari 没有 WebUSB。</li>
 <li>Android 中已打开 USB 调试，设备已接好，且没有其他程序占用它。正在运行的 adb 服务会占用它（用 <code>adb kill-server</code> 停止），另一个打开了本页面的标签页也会。</li>
 <li>给 shell 的 root 权限：第一次时 Magisk 会在设备上询问（“Shell”请求 root）。请允许。</li>
-<li>发布版本的文件，从<a href="https://github.com/dikeckaan/mu5358-linux/releases">项目的发布页</a>下载：<code>SHA256SUMS</code>、<code>SHA256SUMS.sig</code>、<code>mu5358-openwrt.img.gz</code>（约 53 MB）、<code>mu5358-kernel.Image.gz</code>、<code>mu5358-ramdisk.tar.gz</code>、<code>mu5358-tools.tar.gz</code>、<code>mu5358-install.sh</code> 和 <code>android-files.txt</code>。网页无法自行下载 GitHub 发布版本的文件，所以由您下载，再在页面上选择它们。</li>
+<li>发布版本的文件，从<a href="https://github.com/dikeckaan/mu5358-linux/releases">项目的发布页</a>下载：<code>SHA256SUMS</code>、<code>SHA256SUMS.sig</code>、<code>mu5358-openwrt.img.gz</code>（约 53 MB）、<code>mu5358-kernel.Image.gz</code>、<code>mu5358-ramdisk.tar.gz</code>、<code>mu5358-tools.tar.gz</code>、<code>mu5358-install.sh</code> 和 <code>android-files.txt</code>。页面会自行下载它们：来自项目的发布版本镜像（仓库的一个分支，GitHub 允许网页读取它；GitHub 自己的发布下载则不回应网页）。镜像没有某个版本的副本时，由您下载文件并在页面上选择。</li>
 <li>如果要用 userdata 之后的空间：从 Android 的 /data 划出 Linux 的那份之后，/data 还得至少剩 4 GiB 空闲。</li>
 <li>所安装系统中 root 的密码（至少 6 个字符），在页面上输入：它成为 SSH 和网页面板的 root 密码，否则 OpenWrt 会让它们没有密码。设备只收到它的哈希。</li>
 </ul>
 
 <h2 id="does">页面做什么，设备上运行什么</h2>
-<p>页面是一个小型 adb 客户端。它通过 GitHub 的 API 读取发布版本列表，连同 GitHub 为每个文件计算的 SHA-256。当您选择下载好的文件时，它在浏览器中检查它们：<code>SHA256SUMS</code> 必须与 GitHub 的校验和一致，并且必须带有项目发布密钥的签名（<code>SHA256SUMS.sig</code>，usign 格式的 Ed25519 签名，用内置在页面里的密钥校验：源码中的 <code>installer/release.pub</code>，编号 <code>15fd2f702186c19e</code>）；其他每个文件必须与 <code>SHA256SUMS</code> 中写的校验和一致。没有项目签名的 <code>SHA256SUMS</code> 一律拒绝，无论 GitHub 怎么说。只有这之后才会有东西发往设备。</p>
+<p>页面是一个小型 adb 客户端。它通过 GitHub 的 API 读取发布版本列表，连同 GitHub 为每个文件计算的 SHA-256。无论文件是页面下载的还是您选择的，它都在浏览器中检查它们：<code>SHA256SUMS</code> 必须与 GitHub 的校验和一致，并且必须带有项目发布密钥的签名（<code>SHA256SUMS.sig</code>，usign 格式的 Ed25519 签名，用内置在页面里的密钥校验：源码中的 <code>installer/release.pub</code>，编号 <code>15fd2f702186c19e</code>）；其他每个文件必须与 <code>SHA256SUMS</code> 中写的校验和一致。没有项目签名的 <code>SHA256SUMS</code> 一律拒绝，无论 GitHub 怎么说。只有这之后才会有东西发往设备。</p>
 <p>在设备上，一切都由发布版本自己的脚本 <code>mu5358-install.sh</code> 完成，通过 Magisk 的 <code>su</code> 以 root 运行。页面把它和发布版本的文件放到 <code>/data/local/tmp/mu5358-web</code>；脚本把它们移进 root 自己的目录（<code>/data/adb/mu5358</code>），使用之前再全部检查一遍。然后它把安装作为一项独立的任务运行，页面则跟踪这项任务：各个步骤、日志和结果。</p>
 <ul>
 <li><strong>安装</strong>（或更新）：系统 OpenWrt，连同这台设备自己的厂商文件（模块、固件、Wi-Fi 校准、基带和 GPU 的用户空间，从它的 Android 中复制），以及槽位 b 的启动镜像。您在页面上输入的 root 密码会设置到系统中（以其哈希的形式；设备从不会看到密码本身）。</li>

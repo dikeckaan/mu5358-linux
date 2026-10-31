@@ -2,13 +2,15 @@
 // the device script (installer/mu5358-install.sh) checks everything again and has the last word. This file turns
 // their answers into the page, in the page's language (strings.js), and keeps a masked log of every line.
 //
-// Network: the release list from api.github.com, and this site's own files. Nothing else (the CSP says so too).
-// A release's files cannot be read by a page from GitHub (no CORS on its download links): the user downloads them
-// and picks them here, and the page checks every one against SHA256SUMS, whose own SHA-256 must be the one GitHub's
-// API publishes for the release and which must carry the project's signature (SHA256SUMS.sig, releasekey.js).
-// TODO (after v1): the device's own download of the release, as on MU300 Linux (no file picking), once it has been
-// measured on this device.
+// Network: the release list from api.github.com, the release's files from the project's mirror on
+// raw.githubusercontent.com (config.js, mirror.js), and this site's own files. Nothing else (the CSP says so too).
+// A release's files cannot be read by a page from GitHub itself (no CORS on its download links): this browser
+// downloads them from the mirror when it holds the release, else the user downloads them and picks them here;
+// either way the page checks every one against SHA256SUMS, whose own SHA-256 must be the one GitHub's API publishes
+// for the release and which must carry the project's signature (SHA256SUMS.sig, releasekey.js).
+// TODO: the device's own download of the release, as on MU300 Linux, once measured on this device.
 import { AdbConnection } from "./adb/connection.js";
+import { MIRROR_BASE } from "./config.js";
 import { AdbError } from "./adb/errors.js";
 import { fingerprint } from "./adb/key.js";
 import { ADB_FILTERS, findAdbInterface, openUsbTransport, platformOf } from "./adb/usb.js";
@@ -17,6 +19,7 @@ import { INSTALL_STEPS, MIB, REGION_DEFAULT, UNINSTALL_STEPS, bootBlockers, defa
   jobExit, jobRunning, parseSums, passwordProblem, propBlockers, rebootPending, targets } from "./flow.js";
 import { F, GithubError, filesOf, loadReleases } from "./github.js";
 import { loadKey } from "./keystore.js";
+import { MirrorError, downloadRelease, loadMirror, mirrorHas } from "./mirror.js";
 import { maskSerial, pageMasker as masker } from "./privacy.js";
 import { RELEASE_KEY, releaseKey, verifySums } from "./releasekey.js";
 import { sha256Hex } from "./sha256.js";
@@ -87,6 +90,8 @@ const S = {
   sigFail: null,              // { why, keyNumber } when the picked SHA256SUMS is not signed by signKey
   verified: null,             // { tag, sumsSha, sums, signedBy } once every file of the release checks out
   hashing: "",
+  // the project's mirror of the chosen release (mirror.js): state "" | probing | ready | none | downloading | error
+  mirror: { state: "", info: null, name: "", done: 0, total: 0, error: "", abort: null },
   scriptsFor: "",             // the release whose script is on the device, pushed in this visit
   taken: "",                  // the release the device has taken (take) and not used up yet
   target: "", mib: REGION_DEFAULT, confirm: false,
@@ -310,13 +315,71 @@ async function loadReleaseList() {
     if (S.releases.length && !S.relTag) S.relTag = S.releases[0].tag;
   } catch (e) { S.relError = explainError(e); S.releases = []; }
   render();
+  await probeMirror();
 }
 const release = () => (S.releases || []).find((r) => r.tag === S.relTag) || null;
 
 function chooseRelease(tag) {
   S.relTag = tag;
   S.files = new Map(); S.checks = new Map(); S.verified = null; S.sigFail = null; S.scriptsFor = ""; S.taken = "";
+  if (S.mirror.abort) S.mirror.abort.abort();
+  S.mirror = { state: "", info: null, name: "", done: 0, total: 0, error: "", abort: null };
   render();
+  probeMirror();
+}
+
+// ---------------------------------------------------------------------------------------------------- the mirror
+
+// Does the project's mirror hold the chosen release, every file as the release names it? Asked once per choice;
+// "none" (no mirror, or not this release) leaves the page with the picked files, as before.
+async function probeMirror() {
+  const rel = release();
+  if (!rel || !MIRROR_BASE || DEMO) { S.mirror.state = "none"; render(); return; }
+  S.mirror.state = "probing"; render();
+  try {
+    const info = await loadMirror(MIRROR_BASE, rel.tag);
+    if (release() !== rel) return;
+    if (mirrorHas(info, rel, filesOf(rel))) {
+      S.mirror.info = info; S.mirror.state = "ready";
+      S.mirror.total = filesOf(rel).reduce((s, n) => s + rel.assets.get(n).size, 0);
+      note(`the mirror holds ${rel.tag} (${filesOf(rel).length} files, ${size(S.mirror.total)})`);
+    } else { S.mirror.state = "none"; note(`the mirror's copy of ${rel.tag} is not the release's: not used`); }
+  } catch (e) {
+    if (release() !== rel) return;
+    const code = e instanceof MirrorError ? e.code : "network";
+    S.mirror.state = code === "none" ? "none" : "error"; S.mirror.error = code;
+    note(`mirror: ${code}${e && e.message && e.message !== code ? " (" + e.message + ")" : ""}`);
+  }
+  render();
+}
+
+// This browser downloads every file of the release from the mirror, checks each against the release and then
+// hands them to pickFiles as if the user had picked them: the same verification (SHA256SUMS, its signature,
+// every checksum) and the same push to the device follow.
+async function downloadFromMirror() {
+  const rel = release();
+  if (!rel || S.mirror.state !== "ready" || S.hashing) return;
+  const abort = new AbortController();
+  S.mirror.state = "downloading"; S.mirror.abort = abort; S.mirror.done = 0; S.mirror.error = ""; render();
+  let shown = 0;
+  try {
+    const files = await downloadRelease(MIRROR_BASE, S.mirror.info, rel, filesOf(rel), {
+      signal: abort.signal,
+      onProgress: (name, done, total) => { S.mirror.name = name; S.mirror.done = done; S.mirror.total = total; const now = Date.now(); if (now - shown > 150) { shown = now; render(); } },
+    });
+    if (release() !== rel) return;
+    S.mirror.state = "ready"; S.mirror.abort = null;
+    note(`downloaded the ${files.size} files of ${rel.tag} from the mirror (${size(S.mirror.total)})`);
+    render();
+    await pickFiles([...files.values()]);
+  } catch (e) {
+    if (release() !== rel) return;
+    const code = e instanceof MirrorError ? e.code : "network";
+    S.mirror.abort = null;
+    if (code === "aborted") { S.mirror.state = "ready"; note("the download from the mirror was cancelled"); }
+    else { S.mirror.state = "error"; S.mirror.error = code; note(`the download from the mirror failed: ${code}${e && e.message && e.message !== code ? " (" + e.message + ")" : ""}`); }
+    render();
+  }
 }
 
 // "mu5358-openwrt.img (1).gz" (a second download of the same file) -> "mu5358-openwrt.img.gz"
@@ -675,7 +738,23 @@ function panelRelease() {
     h("select", { onchange: (ev) => chooseRelease(ev.target.value), disabled: !!S.busy },
       S.releases.map((r, i) => h("option", { value: r.tag, selected: r.tag === S.relTag }, r.tag + (r.prerelease ? " (" + t("rel.beta") + ")" : "") + (i === 0 ? " – " + t("rel.newest") : ""))))));
   if (!rel) return p;
-  p.append(h("p", {}, ...withLink(t("rel.download"), rel.page)));
+  const m = S.mirror, mirrorOn = m.state === "ready" || m.state === "downloading";
+  if (m.state === "probing") p.append(wait(t("rel.mirror.probing")));
+  else if (m.state === "ready" || m.state === "downloading") {
+    p.append(h("p", {}, t("rel.mirror.ready", size(m.total))));
+    if (m.state === "downloading") {
+      const bar = h("span", {}); bar.style.width = (m.total ? Math.round(100 * m.done / m.total) : 0) + "%";
+      p.append(h("div", { class: "wi-progress", id: "wi-mirror-progress" }, bar));
+      p.append(h("p", { class: "small" }, t("rel.mirror.downloading", m.name, size(m.done), size(m.total))));
+      p.append(h("div", { class: "actions" }, btn(t("rel.mirror.cancel"), () => { if (m.abort) m.abort.abort(); }, "", { id: "wi-mirror-cancel", always: true })));
+    } else if (!S.verified) {
+      p.append(h("div", { class: "actions" }, btn(t("rel.mirror.button", size(m.total)), downloadFromMirror, "primary", { id: "wi-mirror-download", disabled: !!S.busy || !!S.hashing })));
+    }
+  } else if (m.state === "error") {
+    p.append(callout("warn", t("rel.mirror.fail.title"), t("rel.mirror.fail." + (["network", "truncated", "mismatch", "bad-manifest"].includes(m.error) ? m.error : "network")),
+      h("div", { class: "actions" }, btn(t("rel.mirror.again"), () => { S.mirror.state = ""; S.mirror.error = ""; probeMirror(); }, "small", { id: "wi-mirror-again" }))));
+  }
+  p.append(h("p", { class: mirrorOn ? "small muted" : "" }, ...withLink(t(mirrorOn ? "rel.download.or" : "rel.download"), rel.page)));
   const list = h("ul", { class: "wi-filelist" });
   for (const n of filesOf(rel)) {
     const a = rel.assets.get(n), c = S.checks.get(n);
@@ -687,7 +766,7 @@ function panelRelease() {
   p.append(list);
   const input = h("input", { type: "file", multiple: true, id: "wi-files", class: "wi-hidden", onchange: (ev) => { const fl = [...ev.target.files]; ev.target.value = ""; pickFiles(fl); } });
   p.append(input);
-  const acts = h("div", { class: "actions" }, h("label", { class: "wi-btn" + (S.verified ? "" : " primary"), for: "wi-files" }, t("rel.pick")));
+  const acts = h("div", { class: "actions" }, h("label", { class: "wi-btn" + (S.verified || mirrorOn ? "" : " primary"), for: "wi-files" }, t("rel.pick")));
   if (DEMO) acts.append(btn(t("demo.files"), async () => { const d = await import("./demo.js"); pickFiles((await d.demoRelease(DEMO)).files); }, "small", { id: "wi-demo-files" }));
   p.append(acts);
   if (S.hashing) p.append(wait(t("file.hashing.now", S.hashing)));
