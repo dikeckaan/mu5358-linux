@@ -372,8 +372,9 @@ static void collect_modem(struct data *d)
 		snprintf(d->oper, sizeof(d->oper), "%s", oper_name(num));
 	d->act = act;
 	snprintf(d->net, sizeof(d->net), "%s",
-		 /* 13 is E-UTRA-NR dual connectivity: an LTE cell that can add NR - Android shows LTE for it */
-		 act == 7 || act == 13 ? "LTE" : act == 11 || act == 12 ? "5G" : act == 2 || act == 4 || act == 5 || act == 6 ? "3G" :
+		 /* 13 is E-UTRA-NR dual connectivity (5G NSA): Android's status bar shows 5G for it while its network type
+		  * stays LTE; this network (28603) gives 13 (2026-11-01) */
+		 act == 7 ? "LTE" : act == 11 || act == 12 || act == 13 ? "5G" : act == 2 || act == 4 || act == 5 || act == 6 ? "3G" :
 		 act == 0 || act == 3 ? "2G" : "");
 	run(AT " 'AT+CEREG?' 2>/dev/null", b, sizeof(b));
 	d->reg = 0;

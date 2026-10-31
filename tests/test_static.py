@@ -489,6 +489,16 @@ class Charge(unittest.TestCase):
         self.assertIn('etc/mu5358/charge-limit', (TOP / 'installer/mu5358-install.sh').read_text(encoding='utf-8'))
 
 
+class ScreenRadioLabel(unittest.TestCase):
+    """+COPS AcT 13 is E-UTRAN-NR dual connectivity (5G NSA, what this network gives): the dashboard labels it 5G as
+    Android does, not LTE (2026-11-01: 'Android says 5G, Linux said 4G')."""
+
+    def test_act_13_is_5g(self):
+        d = (TOP / 'tools/u30ui2/data.c').read_text(encoding='utf-8')
+        self.assertNotRegex(d, r'act == 7 \|\| act == 13 \? "LTE"')
+        self.assertRegex(d, r'act == 11 \|\| act == 12 \|\| act == 13 \? "5G"')
+
+
 class ReleaseWorkflow(unittest.TestCase):
     """The Release workflow and tools/ci-release.sh: main only, the key required, the kernel pinned to the commit
     kernel/build.sh names, the release string the vendor modules were loaded into, and the mirror after the release."""
