@@ -84,6 +84,7 @@ mkdir -p "$W/ci" && cp kernel/build.log kernel/linux.config kernel/config-side-e
 step "the tools"
 docker run --rm -v "$PWD/tools/u30ui":/w mu5358-mainline-build bash /w/build.sh
 docker run --rm -v "$PWD/tools":/t mu5358-mainline-build bash /t/u30ui2/build.sh
+docker run --rm -v "$PWD/tools":/t mu5358-mainline-build bash /t/charge/build.sh
 docker run --rm -e FONT=/src/common/lib/fonts/font_6x10.c -v "$W/kernel":/src -v "$PWD/tools/screencon":/w mu5358-mainline-build bash /w/build.sh
 docker run --rm -v "$W/kernel":/src -v "$PWD/tools/spispeed":/m mu5358-kbuild bash /m/build.sh
 VERMAGIC=$(docker run --rm -v "$PWD/tools/spispeed":/m mu5358-kbuild modinfo -F vermagic /m/panelcmd.ko)

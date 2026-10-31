@@ -62,6 +62,34 @@ EOF
 chmod 755 "$R/etc/init.d/mu5358-thermal"
 ln -sf ../init.d/mu5358-thermal "$R/etc/rc.d/S99mu5358-thermal"
 
+# mu5358-charge (tools/charge): the charger's input limit from what the source offers, over /dev/i2c-6 (the vendor
+# stack leaves it at the USB default of 500 mA without Android's charging policy: 450 mA into the battery from a
+# port that offers 3 A, 2026-11-01). The service waits for the i2c-dev module mu5358-hw loads; the charge limit the
+# user sets lives in /etc/mu5358/charge-limit (carried across updates by the installer).
+M6=$(cd "$(dirname "$0")/.." && pwd)/tools/charge
+if [ -f "$M6/mu5358-charge" ]; then
+    cp "$M6/mu5358-charge" "$R/opt/mu5358/bin/mu5358-charge"
+    chmod 755 "$R/opt/mu5358/bin/mu5358-charge"
+fi
+cat > "$R/etc/init.d/mu5358-charge" <<'EOF'
+#!/bin/sh /etc/rc.common
+# U30 Pro: the charger's input limit set from the source (/opt/mu5358/bin/mu5358-charge); on SIGTERM it puts the
+# chip back to 500 mA, so a stop is always safe
+START=98
+USE_PROCD=1
+
+start_service() {
+	[ -x /opt/mu5358/bin/mu5358-charge ] || return 0
+	procd_open_instance charge
+	procd_set_param command /bin/sh -c 'for i in $(seq 20); do [ -e /dev/i2c-6 ] && break; sleep 1; done; exec /opt/mu5358/bin/mu5358-charge'
+	procd_set_param respawn 3600 5 0
+	procd_set_param term_timeout 5
+	procd_close_instance
+}
+EOF
+chmod 755 "$R/etc/init.d/mu5358-charge"
+ln -sf ../init.d/mu5358-charge "$R/etc/rc.d/S98mu5358-charge"
+
 echo mu5358 > "$R/etc/mu5358-device"
 
 # The LAN address: mu300-lan-ip gives 90-mu300 (a first install) and preinit's early DHCP server the device's default,

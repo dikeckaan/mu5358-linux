@@ -20,6 +20,7 @@ Website: **https://kaandikec.com/mu5358-linux/** (English, Türkçe, 中文)
 | Screen | `u30ui2`, the dashboard: a status bar and eleven pages (live throughput graph, network with band/cell/signal history, Wi-Fi with a QR code to join, clients, traffic, SMS, battery, system, settings, power, log) in English, Turkish and Chinese; C on DRM, one 1.6 MB static binary, ~6 MB RAM, 0.5 % CPU (`tools/u30ui2/`). The launcher's look (`u30ui`, `tools/u30ui/`) stays as the classic interface |
 | Buttons | power: screen on/off, held = power off; Wi-Fi key held = hotspot off/on |
 | USB | network (NCM, `192.168.58.1`, SSH) and a serial console (ACM) |
+| Charging | `mu5358-charge` sets the charger's input limit from what the source offers (Type-C/PD/CDP 1.5 A, as Android takes; SDP 500 mA), with a temperature guard and an optional charge limit (`mu5358-charge status`, `mu5358-charge limit 80`). Without it the vendor stack stays at 500 mA (`tools/charge/`) |
 | GPU | Mali-G57, OpenGL ES 3.2 / EGL 1.5 / Vulkan through Android's driver, on demand (`gpu/`) |
 | Control panel | mu300-linux's LuCI panel (dashboard, cellular, SIM, SMS, traffic, TTL, terminal, VPN pages; English, Turkish, Chinese) under this project's name: the whole OpenWrt tree is mu300's openwrt-luci release renamed (`openwrt/rebrand.sh`); root's password is set by the installer |
 | Stability | 3-hour soak clean (90/90 checks, no oops, NV untouched, flat memory); 6/6 reboot cycles clean; thermal-guard, lockup detectors with panic |

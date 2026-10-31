@@ -32,7 +32,7 @@ KOUT=${KOUT:-/Volumes/mu5358kb/out}
 BUSYBOX=${BUSYBOX:-../mu300-linux/work/release/v2026.10.16/kernel/busybox}
 OUT=work/release/$TAG
 for f in "$ROOTFS" "$KOUT/arch/arm64/boot/Image" "$BUSYBOX" tools/u30ui/u30ui tools/u30ui2/u30ui2 tools/screencon/screencon \
-         tools/spispeed/panelcmd.ko gpu/gltest work/e2fsck/e2fsck; do
+         tools/spispeed/panelcmd.ko tools/charge/mu5358-charge gpu/gltest work/e2fsck/e2fsck; do
     [ -f "$f" ] || { echo "missing: $f" >&2; exit 1; }
 done
 # the base, by its published digest (gh api repos/dikeckaan/mu300-linux/releases/tags/v2026.10.29.1)

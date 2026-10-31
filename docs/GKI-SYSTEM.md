@@ -53,6 +53,14 @@ mu300-post is not used: it makes the running slot the default boot (`mu300-next-
   was off): the PMIC powers up on VBUS. Without a cable it stays off. Either way the next boot is Android.
 - The vendor musb keeps reporting `configured` after the host is gone: mu5358-usb looks at the NCM carrier too.
 - Load average ~16 while idle: vendor kernel threads in D state (as on mu300, FINDINGS 31e).
+- **Charging stays at 500 mA without Android** (2026-11-01). Two bq2560x chargers (master i2c 6-006b, slave 4-006b,
+  vendor `sqc_bq2560x`/`sqc_charger` under `sprd_charger_manager`). In Android ZTE's userspace policy
+  (`charge_arbitrate_service`, over `sqc_netlink`/`zte_misc`) sets the input limit: 1.5 A from the Mac mini's Type-C
+  port (`Reg00=0x0e`), 1.30 A into the battery, the slave in Hi-Z. In Linux the master kept the USB default
+  (`Reg00=0x04`, 450 mA into the battery, 8 h to full) and every sysfs knob (`charger_psy`, `battery`, `interface`
+  `input_current_limit`/`current_max`) accepted a write and changed nothing. `mu5358-charge` (tools/charge) programs
+  REG00/REG01 of the master over `/dev/i2c-6` (this kernel's i2c-dev) from the TCPM/BC1.2 power supplies; the chip's
+  watchdog is off (`Reg05=0x87`), so a value stays until rewritten. The slave is never touched.
 - Boot-time WARNINGs that are harmless: device_links (ums9632_clk), sipa_eth0 "Incorrect netdev->dev_addr".
 
 ## Where the logs are

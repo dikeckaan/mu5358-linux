@@ -434,7 +434,7 @@ vendor_files() {
 # the new release's own files (init scripts, uci-defaults, the version and module lists)
 CARRY="etc/config etc/shadow etc/dropbear etc/uhttpd.crt etc/uhttpd.key etc/u30ui.conf etc/u30ui2.conf etc/mu5358/lang
 etc/mu5358/ui etc/mu5358/hotspot.conf etc/mu5358/wifi-configured etc/mu5358/sms-pool etc/mu5358/traffic etc/mu5358/adb
-etc/mu5358/usb-net etc/mu5358/zram.conf etc/mu5358/user-packages root/.ssh"
+etc/mu5358/usb-net etc/mu5358/zram.conf etc/mu5358/user-packages etc/mu5358/charge-limit root/.ssh"
 # tag_cmp A B: "newer" when tag A (vYYYY.MM.DD[.N]) is newer than B, "older", or "same"; no sort -V here (Magisk's
 # busybox has none)
 tag_cmp() {

@@ -475,6 +475,20 @@ class KernelFragment(unittest.TestCase):
         self.assertLess(c.index('echo rfkill >>'), c.index('echo i2c-dev >>'))
 
 
+class Charge(unittest.TestCase):
+    """mu5358-charge in the image (a procd service that respawns, after the i2c-dev module), in the release's required
+    files, built by the Release workflow, its charge limit carried across updates."""
+
+    def test_in_image_and_release(self):
+        c = (TOP / 'openwrt/customize.sh').read_text(encoding='utf-8')
+        self.assertIn('opt/mu5358/bin/mu5358-charge', c)
+        self.assertIn('init.d/mu5358-charge', c)
+        self.assertIn('respawn 3600 5 0', c[c.index('init.d/mu5358-charge'):][:900])
+        self.assertIn('tools/charge/mu5358-charge', (TOP / 'tools/make-release.sh').read_text(encoding='utf-8'))
+        self.assertIn('/t/charge/build.sh', (TOP / 'tools/ci-release.sh').read_text(encoding='utf-8'))
+        self.assertIn('etc/mu5358/charge-limit', (TOP / 'installer/mu5358-install.sh').read_text(encoding='utf-8'))
+
+
 class ReleaseWorkflow(unittest.TestCase):
     """The Release workflow and tools/ci-release.sh: main only, the key required, the kernel pinned to the commit
     kernel/build.sh names, the release string the vendor modules were loaded into, and the mirror after the release."""
