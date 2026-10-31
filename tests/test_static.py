@@ -429,6 +429,12 @@ class ReleaseWorkflow(unittest.TestCase):
         self.wf = (TOP / '.github/workflows/release.yml').read_text(encoding='utf-8')
         self.ci = (TOP / 'tools/ci-release.sh').read_text(encoding='utf-8')
 
+    def test_fragment_gate(self):
+        """An option olddefconfig dropped from kernel/mu5358-linux.fragment fails the release, after the KMI check."""
+        self.assertIn('fragment-rejected.txt', self.ci)
+        self.assertLess(self.ci.index('KMI:'), self.ci.index('fragment-rejected.txt'))
+        self.assertRegex(self.ci, r"grep -q \. kernel/fragment-rejected\.txt && \{[^\n]*exit 1")
+
     def test_workflow_runs_on_arm64_from_main_with_the_key_and_contents_write(self):
         self.assertIn('runs-on: ubuntu-24.04-arm', self.wf)
         self.assertIn('workflow_dispatch:', self.wf)

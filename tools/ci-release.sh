@@ -75,6 +75,9 @@ print(f"KMI: {len(ref)} symbols of record, {len(new)} built; missing {len(missin
 for s in (missing + differ)[:40]: print("  ", s, ref[s], new.get(s, "-"))
 sys.exit(1 if missing or differ else 0)
 P
+# every option of the fragment must have survived olddefconfig (kernel/build.sh writes what did not; the file holds a
+# newline when all did): a module the system counts on must not go missing quietly
+grep -q . kernel/fragment-rejected.txt && { echo "the fragment was not fully applied:" >&2; cat kernel/fragment-rejected.txt >&2; exit 1; }
 # the kernel's build log and config, for the record (uploaded by the workflow)
 mkdir -p "$W/ci" && cp kernel/build.log kernel/linux.config kernel/config-side-effects.txt kernel/fragment-rejected.txt "$W/ci/"
 
