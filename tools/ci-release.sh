@@ -54,13 +54,18 @@ fi
 grep -q '^SUBLEVEL = 98$' "$W/kernel/common/Makefile" || { echo "not a 6.6.98 tree" >&2; exit 1; }
 
 step "the kernel (kernel/build.sh)"
+# the KMI record as committed: kernel/build.sh writes the build's Module.symvers over kernel/Module.symvers (the record,
+# on the maintainer's Mac), so the comparison below takes the committed file before the build runs
+mkdir -p "$W/ci"
+git show "${GITHUB_SHA:-HEAD}":kernel/Module.symvers > "$W/ci/Module.symvers.ref"
+[ "$(wc -l < "$W/ci/Module.symvers.ref")" -gt 10000 ] || { echo "kernel/Module.symvers of record is not there" >&2; exit 1; }
 docker run --rm -e JOBS="$(nproc)" -v "$W/kernel":/src -v "$PWD/kernel":/work mu5358-kbuild bash /work/build.sh
 KOUT=$W/kernel/out
 KREL=$(cat "$KOUT/include/config/kernel.release")
 [ "$KREL" = "$KREL_WANT" ] || { echo "kernel.release is $KREL, not $KREL_WANT" >&2; exit 1; }
 # the KMI: every exported symbol with the CRC the modules of the device were loaded against (kernel/Module.symvers,
 # the maintainer's build that the stock vendor modules were verified to load into, kernel/check-kmi.py)
-python3 - "$KOUT/Module.symvers" kernel/Module.symvers <<'P'
+python3 - "$KOUT/Module.symvers" "$W/ci/Module.symvers.ref" <<'P'
 import sys
 def read(p):
     out = {}
@@ -79,7 +84,7 @@ P
 # newline when all did): a module the system counts on must not go missing quietly
 grep -q . kernel/fragment-rejected.txt && { echo "the fragment was not fully applied:" >&2; cat kernel/fragment-rejected.txt >&2; exit 1; }
 # the kernel's build log and config, for the record (uploaded by the workflow)
-mkdir -p "$W/ci" && cp kernel/build.log kernel/linux.config kernel/config-side-effects.txt kernel/fragment-rejected.txt "$W/ci/"
+cp kernel/build.log kernel/linux.config kernel/config-side-effects.txt kernel/fragment-rejected.txt kernel/Module.symvers "$W/ci/"
 
 step "the tools"
 docker run --rm -v "$PWD/tools/u30ui":/w mu5358-mainline-build bash /w/build.sh

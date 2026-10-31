@@ -497,6 +497,13 @@ class ReleaseWorkflow(unittest.TestCase):
         self.wf = (TOP / '.github/workflows/release.yml').read_text(encoding='utf-8')
         self.ci = (TOP / 'tools/ci-release.sh').read_text(encoding='utf-8')
 
+    def test_kmi_reference_is_the_committed_one(self):
+        """kernel/build.sh copies the build's Module.symvers over kernel/Module.symvers (the record, on the Mac): the
+        CI gate must compare against the committed file, taken before the build, not against what the build wrote."""
+        self.assertRegex(self.ci, r'git show "?\$\{?GITHUB_SHA[^\n]*:kernel/Module\.symvers[^\n]*> "\$W/ci/Module\.symvers\.ref"')
+        self.assertLess(self.ci.index('Module.symvers.ref"'), self.ci.index('bash /work/build.sh'))
+        self.assertIn('"$KOUT/Module.symvers" "$W/ci/Module.symvers.ref"', self.ci)
+
     def test_fragment_gate(self):
         """An option olddefconfig dropped from kernel/mu5358-linux.fragment fails the release, after the KMI check."""
         self.assertIn('fragment-rejected.txt', self.ci)
