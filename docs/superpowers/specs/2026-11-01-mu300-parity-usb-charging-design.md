@@ -288,6 +288,26 @@ stream stops for this round.
 - Promotion stays manual (`gh release edit TAG --prerelease=false --latest`) after a bench trial boot.
 - Telegram announcements (mu300's `telegram.yml`): only if the maintainer wants a channel and a bot token.
 
+### W9 VPN: mu300-vpn (asked 2026-11-01, "Mu300-vpn desteği de getir")
+
+mu300's VPN is a module of its own (`dikeckaan/mu300-linux-vpn`, parity B8): `mu300-extra install vpn` fetches it
+into the extras directory on the disk, `mu300-vpn` drives the engines (xray, sing-box, mihomo, dae; profiles,
+subscriptions, uplink hotplug `96-mu300-vpn-uplink`, the fail-closed kill switch `lib/vpn-orphan.sh`), and the
+LuCI VPN pages (overview, profiles, subscriptions, engines, logs, settings) come with the control panel we already
+carry (renamed by `openwrt/rebrand.sh`; hidden while no module is installed, mu300 #182).
+
+- The extras directory is `data/extra` of W2's layout (mu300: `/mnt/mu300-disk/extra`); `mu5358-extra` is
+  mu300's `mu300-extra` renamed, with the disk path and the module's release repository as its two differences.
+  The module itself (the engines' arm64 binaries) is mu300's release, verified by its signed sums, not rebuilt
+  here: nothing in it is board-specific (the kill switch and uplink scripts name `sipa_eth0` through
+  `mu5358-device`, A1 of the parity list).
+- The download runs on the device (the SIM, or the USB host's connection when the device is a client): the page
+  and LuCI say the size first (xray ~30 MB); the bench test is the maintainer's to start (constraint 4).
+- Acceptance: a WireGuard profile (in the image already) and one xray profile the maintainer supplies, traffic
+  from a Wi-Fi client through the tunnel, the kill switch dropping traffic when the engine is stopped, the LuCI
+  pages in en/tr/zh.
+- Order: after W2 (needs `data/`); size M.
+
 ## Order and size
 
 | Order | Stream | Size | Why here |
@@ -301,7 +321,8 @@ stream stops for this round.
 | 7 | W3 stability items, load average | M | many small ones; interleaved with 3-6 as bench time allows |
 | 8 | W5 host mode test, then DisplayLink | S + M | needs the maintainer's hands (OTG adapter, Wi-Fi) |
 | 9 | W6 round 2 (the rest of the list) | M | each a CI build and a trial boot |
-| 10 | W7 mainline DMA | L (time-boxed) | nothing else depends on it |
+| 10 | W9 VPN (mu300-vpn module, extras in `data/extra`) | M | after W2's layout; the engines are mu300's release |
+| 11 | W7 mainline DMA | L (time-boxed) | nothing else depends on it |
 
 Each stream is its own plan (`superpowers:writing-plans`), its own branch and PR, tests first, a trial boot on
 the bench before the PR merges when it touches the device.
