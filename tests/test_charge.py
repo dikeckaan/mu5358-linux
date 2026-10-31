@@ -198,5 +198,89 @@ class Apply(Base):
         self.assertEqual(self.run_mc('limit').stdout.strip(), '100')
 
 
+
+REGS_TEXT = """Master Reg:
+Reg[00] = 0x04
+Reg[01] = 0x9a
+Reg[02] = 0xb4
+Reg[03] = 0xa6
+Reg[04] = 0x90
+Reg[05] = 0x87
+Reg[06] = 0x66
+Reg[07] = 0x40
+Reg[08] = 0x34
+Reg[09] = 0x10
+Reg[0a] = 0xa0
+Reg[0b] = 0x00
+SLAVE Reg:
+Reg[00] = 0x84
+Reg[01] = 0x8a
+Reg[02] = 0xb4
+Reg[03] = 0xa6
+Reg[04] = 0x90
+Reg[05] = 0x07
+Reg[06] = 0x66
+Reg[07] = 0x40
+Reg[08] = 0x24
+Reg[09] = 0x00
+Reg[0a] = 0x80
+Reg[0b] = 0x00
+"""
+
+
+class ApplySysfs(Base):
+    """The vendor driver's registers attribute (/sys/bus/i2c/devices/6-006b/registers: the Master and SLAVE blocks on
+    read; "0 REG VAL" on write for the master) is the first way to the chip; i2c-dev the fallback. A regular file
+    named in MU5358_CHARGE_REGS stands in for the attribute: a write of "0 REG VAL" patches its Master block."""
+
+    def setUp(self):
+        super().setUp()
+        self.regs = self.root / 'registers'
+        self.regs.write_text(REGS_TEXT)
+        self.i2c = self.root / 'i2c'
+        self.i2c.write_bytes(LINUX_REGS)
+        self.state = self.root / 'state'
+        self.env = {'MU5358_CHARGE_REGS': str(self.regs), 'MU5358_CHARGE_I2C': str(self.i2c), 'MU5358_STATE': str(self.state)}
+
+    def once(self, files, **env):
+        self.tree(files)
+        return self.run_mc('once', env=dict(self.env, **env)).stdout.strip()
+
+    def master(self, reg):
+        block = self.regs.read_text().split('SLAVE Reg:')[0]
+        return int(block.split(f'Reg[{reg:02x}] = ')[1][:4], 16)
+
+    def test_once_mac_through_the_attribute(self):
+        line = self.once(mac_tree())
+        self.assertIn('input_ma=1500 charge=on', line)
+        self.assertIn('reg00=0x0e reg01=0x9a', line)
+        self.assertEqual(self.master(0), 0x0e)
+        self.assertEqual(self.i2c.read_bytes(), LINUX_REGS, 'i2c-dev untouched while the attribute is there')
+        self.assertIn('SLAVE Reg:\nReg[00] = 0x84', self.regs.read_text(), 'the slave block untouched')
+
+    def test_hot_off_through_the_attribute(self):
+        self.once(mac_tree(**{f'{PSY}/battery/temp': '460'}))
+        self.assertEqual((self.master(0), self.master(1)), (0x04, 0x8a))
+
+    def test_sigterm_restores_through_the_attribute(self):
+        self.tree(mac_tree())
+        e = dict(os.environ, MU5358_ROOT=str(self.root), MU5358_CHARGE_PERIOD='1', **self.env)
+        p = subprocess.Popen([str(BIN)], env=e, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        for _ in range(50):
+            if self.state.exists():
+                break
+            time.sleep(0.1)
+        self.assertEqual(self.master(0), 0x0e)
+        p.send_signal(signal.SIGTERM)
+        self.assertEqual(p.wait(timeout=5), 0, p.stderr.read())
+        self.assertEqual(self.master(0), 0x04)
+        self.assertTrue(self.master(1) & 0x10)
+
+    def test_fallback_to_i2c_dev_without_the_attribute(self):
+        self.regs.unlink()
+        line = self.once(mac_tree())
+        self.assertIn('reg00=0x0e', line)
+        self.assertEqual(self.i2c.read_bytes()[0], 0x0e)
+
 if __name__ == '__main__':
     unittest.main()

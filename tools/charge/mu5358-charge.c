@@ -218,6 +218,8 @@ static void print_decision(const struct decision *d)
 struct chip {
 	int fd;
 	int is_file;
+	const char *regs;	/* the vendor driver's registers attribute; NULL: i2c-dev */
+	int regs_is_file;	/* a regular file stands in for the attribute (tests) */
 };
 
 static const char *i2c_path(void)
@@ -226,10 +228,96 @@ static const char *i2c_path(void)
 	return p ? p : "/dev/i2c-6";
 }
 
+/* The vendor driver's (sqc_bq2560x) attribute: a read gives "Master Reg:" then "Reg[NN] = 0xVV" lines, then the
+ * SLAVE block; a write of "0 REG VAL" (hex) writes the master's register through the driver's own I2C client
+ * (1 would be the slave: never written here). On the bench i2c-dev transfers to the chip answered EIO while this
+ * works, and it cannot race the driver's own transfers. */
+static const char *regs_path(void)
+{
+	const char *p = getenv("MU5358_CHARGE_REGS");
+	return p ? p : "/sys/bus/i2c/devices/6-006b/registers";
+}
+
+/* the master's register REG from the attribute's text, or -1 */
+static int regs_parse(const char *text, int reg)
+{
+	char key[16];
+	const char *slave = strstr(text, "SLAVE"), *p;
+	snprintf(key, sizeof key, "Reg[%02x] = 0x", reg);
+	p = strstr(text, key);
+	if (!p || (slave && p > slave))
+		return -1;
+	return (int)strtol(p + strlen(key), NULL, 16);
+}
+
+static int regs_read_text(const struct chip *c, char *buf, size_t n)
+{
+	FILE *f = fopen(c->regs, "r");
+	size_t got;
+	if (!f)
+		return -1;
+	got = fread(buf, 1, n - 1, f);
+	fclose(f);
+	buf[got] = 0;
+	return 0;
+}
+
+static int regs_read(const struct chip *c, int reg)
+{
+	char text[2048];
+	if (regs_read_text(c, text, sizeof text) < 0)
+		return -1;
+	return regs_parse(text, reg);
+}
+
+static int regs_write(const struct chip *c, int reg, int val)
+{
+	char text[2048], key[16], *p;
+	FILE *f;
+	if (!c->regs_is_file) {
+		int fd = open(c->regs, O_WRONLY), n;
+		char line[32];
+		if (fd < 0)
+			return -1;
+		n = snprintf(line, sizeof line, "0 %x %x\n", reg, val);
+		if (write(fd, line, (size_t)n) != n) {
+			close(fd);
+			return -1;
+		}
+		close(fd);
+		return 0;
+	}
+	/* the stand-in file: the Master block's line patched in place */
+	if (regs_read_text(c, text, sizeof text) < 0)
+		return -1;
+	snprintf(key, sizeof key, "Reg[%02x] = 0x", reg);
+	p = strstr(text, key);
+	if (!p || (strstr(text, "SLAVE") && p > strstr(text, "SLAVE")) || strlen(p) < strlen(key) + 2)
+		return -1;
+	p += strlen(key);
+	p[0] = "0123456789abcdef"[(val >> 4) & 15];
+	p[1] = "0123456789abcdef"[val & 15];
+	f = fopen(c->regs, "w");
+	if (!f)
+		return -1;
+	fputs(text, f);
+	fclose(f);
+	return 0;
+}
+
 static int chip_open(struct chip *c)
 {
 	struct stat st;
-	const char *p = i2c_path();
+	const char *p;
+	memset(c, 0, sizeof *c);
+	c->fd = -1;
+	if (stat(regs_path(), &st) == 0) {
+		c->regs = regs_path();
+		/* a sysfs attribute is a regular file too: the stand-in is whatever is not under /sys */
+		c->regs_is_file = strncmp(c->regs, "/sys/", 5) != 0;
+		return 0;
+	}
+	p = i2c_path();
 	c->fd = open(p, O_RDWR);
 	if (c->fd < 0)
 		return -1;
@@ -249,18 +337,25 @@ static int chip_open(struct chip *c)
 	return 0;
 }
 
+/* plain I2C transactions (I2C_RDWR: a write of the register address, then a read of one byte; or a write of
+ * address and value), what every adapter offers; the SMBus emulation is not relied on */
 static int chip_read(struct chip *c, int reg)
 {
-	unsigned char b;
+	unsigned char b, r = (unsigned char)reg;
+	if (c->regs)
+		return regs_read(c, reg);
 	if (c->is_file)
 		return pread(c->fd, &b, 1, reg) == 1 ? b : -1;
 #ifdef __linux__
 	{
-		union i2c_smbus_data data;
-		struct i2c_smbus_ioctl_data a = { I2C_SMBUS_READ, (unsigned char)reg, I2C_SMBUS_BYTE_DATA, &data };
-		if (ioctl(c->fd, I2C_SMBUS, &a) < 0)
+		struct i2c_msg m[2] = {
+			{ I2C_ADDR, 0, 1, &r },
+			{ I2C_ADDR, I2C_M_RD, 1, &b },
+		};
+		struct i2c_rdwr_ioctl_data d = { m, 2 };
+		if (ioctl(c->fd, I2C_RDWR, &d) < 0)
 			return -1;
-		return data.byte & 0xff;
+		return b;
 	}
 #else
 	return -1;
@@ -269,15 +364,16 @@ static int chip_read(struct chip *c, int reg)
 
 static int chip_write(struct chip *c, int reg, int val)
 {
-	unsigned char b = (unsigned char)val;
+	unsigned char b[2] = { (unsigned char)reg, (unsigned char)val };
+	if (c->regs)
+		return regs_write(c, reg, val);
 	if (c->is_file)
-		return pwrite(c->fd, &b, 1, reg) == 1 ? 0 : -1;
+		return pwrite(c->fd, &b[1], 1, reg) == 1 ? 0 : -1;
 #ifdef __linux__
 	{
-		union i2c_smbus_data data;
-		struct i2c_smbus_ioctl_data a = { I2C_SMBUS_WRITE, (unsigned char)reg, I2C_SMBUS_BYTE_DATA, &data };
-		data.byte = b;
-		return ioctl(c->fd, I2C_SMBUS, &a) < 0 ? -1 : 0;
+		struct i2c_msg m = { I2C_ADDR, 0, 2, b };
+		struct i2c_rdwr_ioctl_data d = { &m, 1 };
+		return ioctl(c->fd, I2C_RDWR, &d) < 0 ? -1 : 0;
 	}
 #else
 	return -1;
@@ -390,8 +486,8 @@ static int round_once(struct chip *c, struct decision *prev, int have_prev, int 
 	read_inputs(&in);
 	decide(&in, have_prev ? prev : NULL, &d);
 	if (apply(c, &d, &a) < 0) {
-		snprintf(line, n, "source=%s input_ma=%d charge=%s reason=i2c-error temp=%d capacity=%d", d.source, d.input_ma,
-			 d.charge ? "on" : "off", in.temp, in.capacity);
+		snprintf(line, n, "source=%s input_ma=%d charge=%s reason=i2c-error temp=%d capacity=%d error=%s", d.source,
+			 d.input_ma, d.charge ? "on" : "off", in.temp, in.capacity, strerror(errno));
 		return 4;
 	}
 	if (a.rewritten == 1)
