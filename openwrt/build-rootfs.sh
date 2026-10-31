@@ -74,3 +74,5 @@ e2fsck -fn $img >/dev/null
 gzip -${GZIP_LEVEL:-1} -n -c $img > $gz
 echo "image: ${size} MiB, $(du -m $gz | cut -f1) MiB gzipped, sha256 $(sha256sum < $img | cut -c1-64)"
 echo "$(sha256sum < $img | cut -c1-64) $(stat -c %s $img)" > $gz.image
+# on a Linux host the container is root and the caller is not (the Release workflow): the output is the caller's
+[ -z "${HOST_UID:-}" ] || chown -R "$HOST_UID:${HOST_GID:-$HOST_UID}" $OUT

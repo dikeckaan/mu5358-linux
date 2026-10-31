@@ -42,13 +42,17 @@ rm -rf "$OUT" && mkdir -p "$OUT"
 ROOTFS=$(cd "$(dirname "$ROOTFS")" && pwd)/$(basename "$ROOTFS")
 KOUT=$(cd "$KOUT" && pwd)
 
+# the containers run as root; on a Linux host (the Release workflow) what they write into the tree must be the caller's,
+# or the mv and rm below fail: HOST_UID/HOST_GID for the scripts that chown their output, --user where root is not needed
+UID_GID=$(id -u):$(id -g)
 docker run --rm -e GENERIC=1 -e VERSION="$TAG" -e SIZE_MIB=2047 -e IMG_NAME=mu5358-openwrt.img.gz -e GZIP_LEVEL=6 \
+    -e HOST_UID="${UID_GID%:*}" -e HOST_GID="${UID_GID#*:}" \
     -v "$PWD":/w -v "$ROOTFS":/in/rootfs.tar.gz:ro -v "$KOUT":/kout:ro mu5358-kbuild bash /w/openwrt/build-rootfs.sh
 mv work/openwrt/mu5358-openwrt.img.gz work/openwrt/mu5358-openwrt.img.gz.image "$OUT/"
 
 gzip -9 -n -c "$KOUT/arch/arm64/boot/Image" > "$OUT/mu5358-kernel.Image.gz"
 # the ramdisk's files, root's (the installer runs cpio as root over what it unpacks)
-docker run --rm -v "$PWD":/w -v "$(cd "$(dirname "$BUSYBOX")" && pwd)/busybox":/bb:ro -w /tmp mu5358-kbuild sh -c "
+docker run --rm --user "$UID_GID" -v "$PWD":/w -v "$(cd "$(dirname "$BUSYBOX")" && pwd)/busybox":/bb:ro -w /tmp mu5358-kbuild sh -c "
     mkdir -p rd/mu && cp /w/boot/init rd/init && cp /bb rd/mu/busybox && cp /w/work/e2fsck/e2fsck rd/mu/e2fsck &&
     chmod 755 rd/init rd/mu/busybox rd/mu/e2fsck &&
     tar --owner=0 --group=0 --numeric-owner --mtime=@0 --sort=name -czf /w/$OUT/mu5358-ramdisk.tar.gz -C rd init mu"
@@ -59,10 +63,11 @@ if [ -x "$NDKCC" ]; then
     "$NDKCC" -static -O2 -Wall -s -o installer/gpt-userdata installer/gpt-userdata.c
     "$NDKCC" -static -O2 -Wall -s -o installer/f2fs-shrink tools/f2fs-shrink.c
 else
-    docker run --rm --platform linux/arm64 -v "$PWD":/w -w /w alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc sh -eu -c '
+    docker run --rm --platform linux/arm64 -e UID_GID="$UID_GID" -v "$PWD":/w -w /w alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc sh -eu -c '
         apk add -q build-base linux-headers
         gcc -static -O2 -Wall -s -o installer/gpt-userdata installer/gpt-userdata.c
-        gcc -static -O2 -Wall -s -o installer/f2fs-shrink tools/f2fs-shrink.c'
+        gcc -static -O2 -Wall -s -o installer/f2fs-shrink tools/f2fs-shrink.c
+        chown "$UID_GID" installer/gpt-userdata installer/f2fs-shrink'
 fi
 file installer/gpt-userdata installer/f2fs-shrink | grep -q 'statically linked' || { echo "the tools are not static" >&2; exit 1; }
 tar --uid 0 --gid 0 -czf "$OUT/mu5358-tools.tar.gz" -C installer gpt-userdata f2fs-shrink
