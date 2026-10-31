@@ -58,3 +58,11 @@ CONFIG_BRIDGE_VLAN_FILTERING=y
 # CONFIG_TRIM_UNUSED_KSYMS is not set
 # CONFIG_LOCALVERSION_AUTO is not set
 CONFIG_LOCALVERSION="-android15-8-mu5358-4k"
+# W6 round 1 (docs/superpowers/specs/2026-11-01-mu300-parity-usb-charging-design.md): userspace I2C for
+# mu5358-charge (the charger's input limit), SPI for the panel tools, DisplayLink DL-1x5 output over USB host mode,
+# RNDIS for Windows hosts. Modules, or code the vendor modules do not see.
+CONFIG_I2C_CHARDEV=m
+CONFIG_SPI_SPIDEV=m
+CONFIG_DRM_UDL=m
+CONFIG_USB_CONFIGFS_RNDIS=y
+CONFIG_USB_F_RNDIS=y

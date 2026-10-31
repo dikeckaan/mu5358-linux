@@ -130,6 +130,12 @@ if [ -f "$R/root/gki-modules-disabled/rfkill.ko" ]; then
     cp "$R/root/gki-modules-disabled/rfkill.ko" "$R/lib/mu5358/modules/"
 fi
 [ -f "$R/lib/mu5358/modules/rfkill.ko" ] && echo rfkill >> "$R/etc/mu5358/modules"
+# userspace I2C (this kernel's i2c-dev, kernel/mu5358-linux.fragment): mu5358-charge programs the charger's input
+# limit through /dev/i2c-6 (the vendor stack leaves it at 500 mA without Android's charging policy, 2026-11-01)
+if [ -f "$R/root/gki-modules-disabled/i2c-dev.ko" ]; then
+    cp "$R/root/gki-modules-disabled/i2c-dev.ko" "$R/lib/mu5358/modules/"
+fi
+[ -f "$R/lib/mu5358/modules/i2c-dev.ko" ] && echo i2c-dev >> "$R/etc/mu5358/modules"
 FW=${3:-/odm/firmware/aic8800}
 if [ -f "$FW/fmacfw_8800d80x2.bin" ]; then
     mkdir -p "$R/odm/firmware/aic8800"

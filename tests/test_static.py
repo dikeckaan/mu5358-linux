@@ -459,6 +459,22 @@ class Telegram(unittest.TestCase):
         self.assertTrue((TOP / '.github/workflows/telegram.yml').is_file())
 
 
+class KernelFragment(unittest.TestCase):
+    """kernel/mu5358-linux.fragment round 1 (design 2026-11-01): userspace I2C for mu5358-charge, spidev, DisplayLink
+    DL-1x5, RNDIS; modules or code only. i2c-dev is the one the image loads at boot (openwrt/customize.sh)."""
+
+    def test_round1_modules(self):
+        f = (TOP / 'kernel/mu5358-linux.fragment').read_text(encoding='utf-8')
+        for line in ('CONFIG_I2C_CHARDEV=m', 'CONFIG_SPI_SPIDEV=m', 'CONFIG_DRM_UDL=m', 'CONFIG_USB_CONFIGFS_RNDIS=y',
+                     'CONFIG_USB_F_RNDIS=y'):
+            self.assertIn(line + '\n', f)
+
+    def test_i2c_dev_in_image(self):
+        c = (TOP / 'openwrt/customize.sh').read_text(encoding='utf-8')
+        self.assertIn('gki-modules-disabled/i2c-dev.ko', c)
+        self.assertLess(c.index('echo rfkill >>'), c.index('echo i2c-dev >>'))
+
+
 class ReleaseWorkflow(unittest.TestCase):
     """The Release workflow and tools/ci-release.sh: main only, the key required, the kernel pinned to the commit
     kernel/build.sh names, the release string the vendor modules were loaded into, and the mirror after the release."""
