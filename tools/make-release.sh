@@ -70,7 +70,9 @@ else
         chown "$UID_GID" installer/gpt-userdata installer/f2fs-shrink'
 fi
 file installer/gpt-userdata installer/f2fs-shrink | grep -q 'statically linked' || { echo "the tools are not static" >&2; exit 1; }
-tar --uid 0 --gid 0 -czf "$OUT/mu5358-tools.tar.gz" -C installer gpt-userdata f2fs-shrink
+# root's in the archive: bsdtar (the Mac) and GNU tar (the runner) spell it differently
+if tar --version 2>/dev/null | grep -q GNU; then TAROWN="--owner=0 --group=0 --numeric-owner"; else TAROWN="--uid 0 --gid 0"; fi
+tar $TAROWN -czf "$OUT/mu5358-tools.tar.gz" -C installer gpt-userdata f2fs-shrink
 cp installer/mu5358-install.sh installer/android-files.txt "$OUT/"
 
 cd "$OUT"
