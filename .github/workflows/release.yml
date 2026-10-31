@@ -59,6 +59,16 @@ jobs:
         env:
           MU5358_RELEASE_KEY: ${{ secrets.MU5358_RELEASE_KEY }}
         run: bash tools/ci-release.sh "$TAG" --publish ${{ inputs.prerelease && '--prerelease' || '' }}
+      # a release made with the workflow's token fires no release event, so telegram.yml would never hear of it
+      - name: Telegram
+        if: success()
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -n "$TELEGRAM_BOT_TOKEN" ] || { echo "no TELEGRAM_BOT_TOKEN: not announced"; exit 0; }
+          sh tools/telegram-announce.sh release "$TAG" published
       - name: the build's record
         if: always()
         uses: actions/upload-artifact@v4

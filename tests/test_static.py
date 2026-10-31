@@ -3,6 +3,7 @@
 written; misc only by the installer's bc_write and boot/init's restore; no telnet; a root password at install; the
 rebranded tree carries no mu300 name in code; every sed -i of the customisation is anchored.
 Modelled on mu300-linux's tests/test_static.py."""
+import os
 import re
 import shutil
 import subprocess
@@ -10,6 +11,7 @@ import sys
 import unittest
 from pathlib import Path
 
+FAKEBIN = Path(__file__).resolve().parent / 'fixtures/fakebin'
 from helpers import TOP, c_sources, python_scripts, rel, shell_scripts, walk
 
 INSTALLER = TOP / 'installer' / 'mu5358-install.sh'
@@ -419,6 +421,42 @@ class Rebranded(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class Telegram(unittest.TestCase):
+    """tools/telegram-announce.sh (mu300's): the token never on a command line, a dry run that shows the message,
+    bad tags refused, and the Release workflow announcing its release (a release made with the workflow's token
+    fires no release event, so telegram.yml alone would never hear of it)."""
+    S = TOP / 'tools/telegram-announce.sh'
+
+    def test_token_never_on_argv(self):
+        t = self.S.read_text(encoding='utf-8')
+        self.assertIn('curl -sS -K', t)
+        self.assertNotRegex(t, r'curl[^\n]*TELEGRAM_BOT_TOKEN')
+        self.assertNotRegex(t, r'api\.telegram\.org/bot\$')
+
+    def test_dry_run_message(self):
+        if not shutil.which('jq'):
+            self.skipTest('no jq')
+        env = dict(os.environ, MU5358_TG_DRY='1', TELEGRAM_BOT_TOKEN='x', TELEGRAM_CHAT_ID='1',
+                   PATH=f'{FAKEBIN}:{os.environ["PATH"]}')
+        out = subprocess.run(['sh', str(self.S), 'release', 'v2026.11.01.1', 'published'], env=env,
+                             capture_output=True, text=True)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn('MU5358 Linux v2026.11.01.1', out.stdout)
+        self.assertIn('web-installer', out.stdout)
+        self.assertIn('Pre-release', out.stdout)
+
+    def test_bad_tag_refused(self):
+        for tag in ('main', 'v2026.11.01.1;x', '../x'):
+            self.assertEqual(subprocess.run(['sh', str(self.S), 'release', tag], capture_output=True).returncode, 2, tag)
+
+    def test_release_workflow_announces(self):
+        y = (TOP / '.github/workflows/release.yml').read_text(encoding='utf-8')
+        self.assertIn('tools/telegram-announce.sh release "$TAG" published', y)
+        self.assertLess(y.index('tools/ci-release.sh'), y.index('telegram-announce.sh'))
+        self.assertIn('continue-on-error: true', y[y.index('telegram-announce.sh') - 400:y.index('telegram-announce.sh')])
+        self.assertTrue((TOP / '.github/workflows/telegram.yml').is_file())
 
 
 class ReleaseWorkflow(unittest.TestCase):

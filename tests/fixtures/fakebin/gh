@@ -1,0 +1,8 @@
+#!/bin/sh
+# A stand-in for gh in the tests (tests/test_static.py Telegram): answers `gh release view TAG ... --json FIELDS` with
+# a fixed release, no network. Anything else is an error.
+case "$*" in
+    "release view "*--json*body*) printf 'MU5358 Linux for the ZTE U30 Pro, installed from the browser: https://kaandikec.com/mu5358-linux/web-installer/\n\nBuilt by the Release workflow from `abc`.\n' ;;
+    "release view "*--json*) printf '{"name":"v2026.11.01.1","isPrerelease":true,"publishedAt":"2026-11-01T00:00:00Z","assets":[{"name":"SHA256SUMS"},{"name":"SHA256SUMS.sig"}]}\n' ;;
+    *) echo "fake gh: unexpected: $*" >&2; exit 1 ;;
+esac
