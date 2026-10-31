@@ -200,19 +200,345 @@ static void print_decision(const struct decision *d)
 	printf("source=%s input_ma=%d charge=%s reason=%s\n", d->source, d->input_ma, d->charge ? "on" : "off", d->reason);
 }
 
+/* --- the chip: REG00 (IINLIM) and REG01 (CHG_CONFIG) of the master bq2560x, over i2c-dev; a regular file named
+ * in MU5358_CHARGE_I2C is a register image (the tests) */
+#ifdef __linux__
+#include <linux/i2c.h>
+#include <linux/i2c-dev.h>
+#include <sys/ioctl.h>
+#endif
+
+#define REG00 0
+#define REG01 1
+#define IINLIM_MASK 0x1f
+#define EN_HIZ 0x80
+#define CHG_CONFIG 0x10
+#define I2C_ADDR 0x6b
+
+struct chip {
+	int fd;
+	int is_file;
+};
+
+static const char *i2c_path(void)
+{
+	const char *p = getenv("MU5358_CHARGE_I2C");
+	return p ? p : "/dev/i2c-6";
+}
+
+static int chip_open(struct chip *c)
+{
+	struct stat st;
+	const char *p = i2c_path();
+	c->fd = open(p, O_RDWR);
+	if (c->fd < 0)
+		return -1;
+	c->is_file = fstat(c->fd, &st) == 0 && S_ISREG(st.st_mode);
+#ifdef __linux__
+	if (!c->is_file && ioctl(c->fd, I2C_SLAVE_FORCE, I2C_ADDR) < 0) {	/* the vendor driver holds the address */
+		close(c->fd);
+		return -1;
+	}
+#else
+	if (!c->is_file) {
+		close(c->fd);
+		errno = ENOTSUP;
+		return -1;
+	}
+#endif
+	return 0;
+}
+
+static int chip_read(struct chip *c, int reg)
+{
+	unsigned char b;
+	if (c->is_file)
+		return pread(c->fd, &b, 1, reg) == 1 ? b : -1;
+#ifdef __linux__
+	{
+		union i2c_smbus_data data;
+		struct i2c_smbus_ioctl_data a = { I2C_SMBUS_READ, (unsigned char)reg, I2C_SMBUS_BYTE_DATA, &data };
+		if (ioctl(c->fd, I2C_SMBUS, &a) < 0)
+			return -1;
+		return data.byte & 0xff;
+	}
+#else
+	return -1;
+#endif
+}
+
+static int chip_write(struct chip *c, int reg, int val)
+{
+	unsigned char b = (unsigned char)val;
+	if (c->is_file)
+		return pwrite(c->fd, &b, 1, reg) == 1 ? 0 : -1;
+#ifdef __linux__
+	{
+		union i2c_smbus_data data;
+		struct i2c_smbus_ioctl_data a = { I2C_SMBUS_WRITE, (unsigned char)reg, I2C_SMBUS_BYTE_DATA, &data };
+		data.byte = b;
+		return ioctl(c->fd, I2C_SMBUS, &a) < 0 ? -1 : 0;
+	}
+#else
+	return -1;
+#endif
+}
+
+struct applied {
+	int reg00_before, reg00_after, reg01_before, reg01_after;
+	int rewritten;	/* 1: REG00 was not what we last wrote; -1: a write did not read back */
+};
+
+static int last_reg00 = -1;
+
+/* IINLIM = 100 mA + N * 100 mA */
+static int iinlim_bits(int ma)
+{
+	int n = (ma - 100) / 100;
+	return n < 0 ? 0 : n > IINLIM_MASK ? IINLIM_MASK : n;
+}
+
+static int apply(struct chip *c, const struct decision *d, struct applied *a)
+{
+	int r0, r1, w0, w1;
+	memset(a, 0, sizeof *a);
+	r0 = chip_read(c, REG00);
+	r1 = chip_read(c, REG01);
+	if (r0 < 0 || r1 < 0)
+		return -1;
+	a->reg00_before = r0;
+	a->reg01_before = r1;
+	if (last_reg00 >= 0 && r0 != last_reg00)
+		a->rewritten = 1;
+	w0 = (r0 & ~(IINLIM_MASK | EN_HIZ)) | iinlim_bits(d->input_ma);
+	w1 = d->charge ? (r1 | CHG_CONFIG) : (r1 & ~CHG_CONFIG);
+	if (w0 != r0 && chip_write(c, REG00, w0) < 0)
+		return -1;
+	if (w1 != r1 && chip_write(c, REG01, w1) < 0)
+		return -1;
+	a->reg00_after = chip_read(c, REG00);
+	a->reg01_after = chip_read(c, REG01);
+	if (a->reg00_after != w0 || a->reg01_after != w1)
+		a->rewritten = -1;
+	last_reg00 = w0;
+	return 0;
+}
+
+/* back to what the vendor driver left: 500 mA, charging on */
+static void restore(struct chip *c)
+{
+	int r0 = chip_read(c, REG00), r1 = chip_read(c, REG01);
+	if (r0 >= 0)
+		chip_write(c, REG00, (r0 & ~(IINLIM_MASK | EN_HIZ)) | iinlim_bits(MIN_MA));
+	if (r1 >= 0)
+		chip_write(c, REG01, r1 | CHG_CONFIG);
+}
+
+/* --- the state file and the CLI */
+static void state_path(char *buf, size_t n)
+{
+	const char *p = getenv("MU5358_STATE");
+	if (p)
+		snprintf(buf, n, "%s", p);
+	else
+		snprintf(buf, n, "%s/run/mu5358/charge", root());
+}
+
+static void state_line(char *buf, size_t n, const struct inputs *in, const struct decision *d, const struct applied *a, int rewrites)
+{
+	snprintf(buf, n, "source=%s input_ma=%d charge=%s reason=%s temp=%d capacity=%d limit=%d reg00=0x%02x reg01=0x%02x rewrites=%d at=%ld",
+		 d->source, d->input_ma, d->charge ? "on" : "off", d->reason, in->temp, in->capacity,
+		 in->limit > 0 ? in->limit : 100, a->reg00_after & 0xff, a->reg01_after & 0xff, rewrites, (long)time(NULL));
+}
+
+/* written whole, then renamed into place */
+static void state_write(const char *line)
+{
+	char path[512], tmp[520];
+	FILE *f;
+	state_path(path, sizeof path);
+	snprintf(tmp, sizeof tmp, "%s.new", path);
+	f = fopen(tmp, "w");
+	if (!f)
+		return;
+	fprintf(f, "%s\n", line);
+	fclose(f);
+	chmod(tmp, 0644);
+	rename(tmp, path);
+}
+
+static void state_remove(void)
+{
+	char path[512];
+	state_path(path, sizeof path);
+	unlink(path);
+}
+
+static volatile sig_atomic_t stop;
+static void on_signal(int s)
+{
+	(void)s;
+	stop = 1;
+}
+
+/* one round: decide, apply, the state line into LINE; the exit code of `once` */
+static int round_once(struct chip *c, struct decision *prev, int have_prev, int *rewrites, char *line, size_t n)
+{
+	struct inputs in;
+	struct decision d;
+	struct applied a;
+	read_inputs(&in);
+	decide(&in, have_prev ? prev : NULL, &d);
+	if (apply(c, &d, &a) < 0) {
+		snprintf(line, n, "source=%s input_ma=%d charge=%s reason=i2c-error temp=%d capacity=%d", d.source, d.input_ma,
+			 d.charge ? "on" : "off", in.temp, in.capacity);
+		return 4;
+	}
+	if (a.rewritten == 1)
+		(*rewrites)++;
+	state_line(line, n, &in, &d, &a, *rewrites);
+	*prev = d;
+	return a.rewritten < 0 ? 3 : 0;
+}
+
+static int cmd_limit(int argc, char **argv)
+{
+	char path[512], b[32];
+	snprintf(path, sizeof path, "%s" P_LIMIT, root());
+	if (argc < 3) {
+		int v = read_int(P_LIMIT);
+		printf("%d\n", v >= 50 && v <= 100 ? v : 100);
+		return 0;
+	}
+	if (!strcmp(argv[2], "off"))
+		snprintf(b, sizeof b, "100");
+	else {
+		char *end;
+		long v = strtol(argv[2], &end, 10);
+		if (end == argv[2] || *end || v < 50 || v > 100) {
+			fprintf(stderr, "mu5358-charge limit: 50..100 or off\n");
+			return 2;
+		}
+		snprintf(b, sizeof b, "%ld", v);
+	}
+	{
+		char dir[512], *s;
+		FILE *f;
+		snprintf(dir, sizeof dir, "%s", path);
+		for (s = dir + 1; (s = strchr(s, '/')); s++) {	/* mkdir -p of the directories */
+			*s = 0;
+			mkdir(dir, 0755);
+			*s = '/';
+		}
+		f = fopen(path, "w");
+		if (!f) {
+			perror(path);
+			return 1;
+		}
+		fprintf(f, "%s\n", b);
+		fclose(f);
+	}
+	return 0;
+}
+
+static int cmd_status(void)
+{
+	char path[512], b[512];
+	FILE *f;
+	state_path(path, sizeof path);
+	f = fopen(path, "r");
+	if (!f) {
+		printf("not running\n");
+		return 1;
+	}
+	if (fgets(b, sizeof b, f))
+		fputs(b, stdout);
+	fclose(f);
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	const char *cmd = argc > 1 ? argv[1] : "";
+	struct decision prev;
+	int have_prev, rewrites = 0, rc;
+	char line[512];
+	struct chip c;
 	if (!strcmp(cmd, "decide")) {
 		struct inputs in;
-		struct decision prev, d;
-		int have;
+		struct decision d;
 		read_inputs(&in);
-		prev_from_env(&prev, &have);
-		decide(&in, have ? &prev : NULL, &d);
+		prev_from_env(&prev, &have_prev);
+		decide(&in, have_prev ? &prev : NULL, &d);
 		print_decision(&d);
 		return 0;
 	}
-	fprintf(stderr, "usage: mu5358-charge [once|decide|status|limit [N|off]]\n");
-	return 2;
+	if (!strcmp(cmd, "status"))
+		return cmd_status();
+	if (!strcmp(cmd, "limit"))
+		return cmd_limit(argc, argv);
+	if (cmd[0] && strcmp(cmd, "once")) {
+		fprintf(stderr, "usage: mu5358-charge [once|decide|status|limit [N|off]]\n");
+		return 2;
+	}
+	if (chip_open(&c) < 0) {
+		fprintf(stderr, "mu5358-charge: %s: %s\n", i2c_path(), strerror(errno));
+		return 4;
+	}
+	prev_from_env(&prev, &have_prev);
+	/* a previous run's state (a respawn, `once` after `once`): what we last wrote, the rewrite count, and the
+	 * decision whose hysteresis still holds */
+	{
+		char path[512], b[512];
+		FILE *f;
+		state_path(path, sizeof path);
+		f = fopen(path, "r");
+		if (f) {
+			if (fgets(b, sizeof b, f)) {
+				char *p;
+				if ((p = strstr(b, " reg00=0x")))
+					last_reg00 = (int)strtol(p + 9, NULL, 16);
+				if ((p = strstr(b, " rewrites=")))
+					rewrites = atoi(p + 10);
+				if (!have_prev && (p = strstr(b, " charge="))) {
+					char *r = strstr(b, " reason=");
+					memset(&prev, 0, sizeof prev);
+					prev.charge = strncmp(p + 8, "off", 3) != 0;
+					if (r)
+						sscanf(r + 8, "%31s", prev.reason);
+					have_prev = 1;
+				}
+			}
+			fclose(f);
+		}
+	}
+	if (!strcmp(cmd, "once")) {
+		rc = round_once(&c, &prev, have_prev, &rewrites, line, sizeof line);
+		state_write(line);
+		printf("%s\n", line);
+		return rc;
+	}
+	{
+		const char *p = getenv("MU5358_CHARGE_PERIOD");
+		int period = p ? atoi(p) : 5;
+		struct sigaction sa;
+		memset(&sa, 0, sizeof sa);
+		sa.sa_handler = on_signal;
+		sigaction(SIGTERM, &sa, NULL);
+		sigaction(SIGINT, &sa, NULL);
+		if (period < 1)
+			period = 1;
+		while (!stop) {
+			rc = round_once(&c, &prev, have_prev, &rewrites, line, sizeof line);
+			have_prev = 1;
+			state_write(line);
+			if (rc == 4)
+				fprintf(stderr, "mu5358-charge: %s\n", line);
+			for (int i = 0; i < period * 10 && !stop; i++)
+				usleep(100000);
+		}
+		restore(&c);
+		state_remove();
+		return 0;
+	}
 }
