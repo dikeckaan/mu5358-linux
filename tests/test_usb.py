@@ -9,6 +9,7 @@ import os
 import shutil
 import stat
 import subprocess
+import re
 import tempfile
 import time
 import unittest
@@ -17,6 +18,7 @@ from pathlib import Path
 from helpers import TOP
 
 USB = TOP / 'openwrt/usb/mu5358-usb'
+INIT = TOP / 'boot/init'
 UDC = 'musb-hdrc.1.auto'
 RECORDER = '''#!/bin/sh
 # records its name and arguments, one call a line, NUL between the arguments; prints a canned reply when one is set
@@ -33,7 +35,7 @@ class Base(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix='mu5358-usb-'))
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.g = self.tmp / 'g'
-        for d in ('functions/ncm.usb0', 'functions/acm.GS0', 'configs/c.1/strings/0x409', 'strings/0x409'):
+        for d in ('functions/ncm.usb0', 'functions/acm.GS0', 'configs/c.1/strings/0x409', 'strings/0x409', 'os_desc'):
             (self.g / d).mkdir(parents=True)
         os.symlink(self.g / 'functions/ncm.usb0', self.g / 'configs/c.1/f1')
         os.symlink(self.g / 'functions/acm.GS0', self.g / 'configs/c.1/f2')
@@ -194,6 +196,118 @@ class Storage(Base):
             r = self.usb(*args)
             self.assertEqual(r.returncode, 2, args)
             self.assertIn('usage', r.stderr)
+
+
+class InitApply(Base):
+    """boot/init's usb_apply block: the composite the system's state files ask for, before switch_root."""
+    HARNESS = """
+log() {{ echo "LOG $*"; }}
+g={g}
+UDC_CLASS={udc}
+# configfs makes lun.0 and os_desc/interface.rndis itself; here mkdir does
+mkdir() {{
+    command mkdir "$@" || return 1
+    for _d in "$@"; do case $_d in -*) ;; */mass_storage.0) command mkdir -p "$_d/lun.0" ;; */rndis.rn0) command mkdir -p "$_d/os_desc/interface.rndis" ;; esac; done
+}}
+rmdir() {{ rm -rf "$@"; }}
+{block}
+usb_apply {root}
+"""
+
+    def block(self):
+        text = INIT.read_text(encoding='utf-8')
+        m = re.search(r'# --- usb-apply begin\n(.*?)# --- usb-apply end\n', text, re.S)
+        self.assertIsNotNone(m, 'boot/init has no "# --- usb-apply begin/end" block')
+        return m.group(1)
+
+    def apply(self, net=None, storage=None, once=False, data=True):
+        root = self.tmp / 'root'
+        (root / 'etc/mu5358').mkdir(parents=True)
+        if data:
+            (root / 'data').mkdir()
+        if net is not None:
+            (root / 'etc/mu5358/usb-net').write_text(net + '\n')
+        if once:
+            (root / 'etc/mu5358/usb-net.once').write_text('')
+        if storage is not None:
+            (root / 'etc/mu5358/usb-storage').write_text(storage + '\n')
+        script = self.HARNESS.format(g=self.g, udc=self.udc, block=self.block(), root=root)
+        r = subprocess.run(['sh', '-c', script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stderr, '')
+        self.root = root
+        return r.stdout
+
+    def f(self, n):
+        p = self.g / f'configs/c.1/f{n}'
+        return os.path.basename(os.readlink(p)) if p.is_symlink() else None
+
+    def applied(self):
+        return (self.root / 'etc/mu5358/usb-net-applied').read_text().strip()
+
+    def test_ncm_and_no_disk_is_what_is_bound_no_rebind(self):
+        out = self.apply()
+        self.assertEqual((self.f(1), self.f(2), self.f(3)), ('ncm.usb0', 'acm.GS0', None))
+        self.assertEqual(self.applied(), 'ncm')
+        self.assertIn('stage=usb-apply net=ncm disk=0 rebind=0', out)
+        self.assertEqual(self.attr('UDC'), UDC)
+
+    def test_rndis_rebuilds_f1_with_the_ms_os_descriptors(self):
+        out = self.apply(net='rndis')
+        self.assertEqual((self.f(1), self.f(2)), ('rndis.rn0', 'acm.GS0'))
+        self.assertFalse((self.g / 'functions/ncm.usb0').exists())
+        self.assertEqual(self.attr('bcdDevice'), '0x0302')
+        self.assertEqual(self.attr('os_desc/use'), '1')
+        self.assertEqual(self.attr('os_desc/qw_sign'), 'MSFT100')
+        self.assertEqual(self.attr('os_desc/b_vendor_code'), '0xcd')
+        self.assertEqual(self.attr('functions/rndis.rn0/os_desc/interface.rndis/compatible_id'), 'RNDIS')
+        self.assertEqual(self.attr('functions/rndis.rn0/os_desc/interface.rndis/sub_compatible_id'), '5162001')
+        self.assertEqual(os.readlink(self.g / 'os_desc/c.1'), str(self.g / 'configs/c.1'))
+        self.assertEqual(self.attr('functions/rndis.rn0/host_addr'), '02:35:58:00:00:04')
+        self.assertEqual(self.attr('functions/rndis.rn0/dev_addr'), '02:35:58:00:00:03')
+        self.assertEqual(self.attr('configs/c.1/strings/0x409/configuration'), 'RNDIS + ACM console')
+        self.assertIn('rebind=1', out)
+        self.assertEqual(self.attr('UDC'), UDC)
+        self.assertEqual(self.applied(), 'rndis')
+
+    def test_ecm_rebuilds_f1(self):
+        self.apply(net='ecm')
+        self.assertEqual(self.f(1), 'ecm.usb0')
+        self.assertEqual(self.attr('configs/c.1/strings/0x409/configuration'), 'ecm + ACM console')
+        self.assertEqual(self.attr('functions/ecm.usb0/host_addr'), '02:35:58:00:00:02')
+        self.assertEqual(self.attr('bcdDevice'), '0x0301')
+
+    def test_storage_on_adds_f3_without_a_medium(self):
+        out = self.apply(storage='on 2048')
+        self.assertEqual((self.f(1), self.f(2), self.f(3)), ('ncm.usb0', 'acm.GS0', 'mass_storage.0'))
+        self.assertEqual(self.attr('functions/mass_storage.0/lun.0/removable'), '1')
+        self.assertEqual(self.attr('functions/mass_storage.0/lun.0/nofua'), '1')
+        f = self.g / 'functions/mass_storage.0/lun.0/file'
+        self.assertTrue(not f.exists() or f.read_text().strip() == '')
+        self.assertEqual(self.attr('idProduct'), '0xa4a2')
+        self.assertEqual(self.attr('configs/c.1/strings/0x409/configuration'), 'ncm + ACM console + USB disk')
+        self.assertIn('net=ncm disk=1 rebind=1', out)
+
+    def test_storage_on_without_an_image_still_adds_the_function(self):
+        self.apply(storage='on 2048', data=False)
+        self.assertEqual(self.f(3), 'mass_storage.0')
+
+    def test_garbage_in_the_files_means_the_defaults(self):
+        out = self.apply(net='wat', storage='maybe 12')
+        self.assertEqual((self.f(1), self.f(3)), ('ncm.usb0', None))
+        self.assertEqual(self.applied(), 'ncm')
+        self.assertIn('rebind=0', out)
+
+    def test_once_is_not_the_init_s_business(self):
+        self.apply(net='ecm', once=True)
+        self.assertEqual(self.f(1), 'ecm.usb0')
+        self.assertTrue((self.root / 'etc/mu5358/usb-net.once').exists())
+
+    def test_place_in_init(self):
+        text = INIT.read_text(encoding='utf-8')
+        self.assertEqual(text.count('usb_apply /newroot'), 1)
+        self.assertLess(text.index('/mu5358-stay'), text.index('usb_apply /newroot'))
+        self.assertLess(text.index('usb_apply /newroot'), text.index('kill $timer $console'))
 
 
 if __name__ == '__main__':

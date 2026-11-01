@@ -320,6 +320,84 @@ if [ -e /newroot/mu5358-stay ]; then
     log "stage=ready"
     while :; do sleep 3600; done
 fi
+# --- usb-apply begin
+# The USB composite the system asked for, now that its files can be read: /etc/mu5358/usb-net (ncm|ecm|rndis, the
+# control panel's Device page or "mu5358-usb net") and /etc/mu5358/usb-storage ("on SIZE": the device as a USB flash
+# drive as well, "mu5358-usb storage"). The gadget above was NCM + ACM before the root was found (the console and the
+# DHCP server needed it); when the system wants something else it is rebuilt and bound again here, once, before the
+# system's own servers start - a replug the computer barely sees, and none at all when NCM without the disk is wanted.
+# The disk function is added without a medium: the system's "mu5358-usb boot" puts the image in (and makes it when it
+# is missing), which needs no rebind. f1 the network, f2 the console, f3 the disk (adb's is f4), in that order.
+# (tests/test_usb.py InitApply runs this block against a directory standing in for configfs.)
+UDC_CLASS=${UDC_CLASS:-/sys/class/udc}
+usb_want() {  # usb_want ROOT: WANT_NET ncm|ecm|rndis, WANT_DISK 0|1, from the system's files (anything odd: the defaults)
+    WANT_NET=ncm WANT_DISK=0 _n= _s= _x=
+    [ ! -r "$1/etc/mu5358/usb-net" ] || read -r _n _x < "$1/etc/mu5358/usb-net" || _n=
+    case $_n in ecm|rndis) WANT_NET=$_n ;; esac
+    [ ! -r "$1/etc/mu5358/usb-storage" ] || read -r _s _x < "$1/etc/mu5358/usb-storage" || _s=
+    [ "$_s" != on ] || WANT_DISK=1
+}
+usb_now() {  # NOW_NET, NOW_DISK: what the gadget has
+    NOW_NET=ncm NOW_DISK=0
+    case $(readlink "$g/configs/c.1/f1" 2>/dev/null) in */ecm.*) NOW_NET=ecm ;; */rndis.*) NOW_NET=rndis ;; esac
+    [ ! -L "$g/configs/c.1/f3" ] || NOW_DISK=1
+}
+usb_compose() {  # usb_compose NET DISK: the functions and the identity (the gadget unbound)
+    rm -f "$g/configs/c.1/f1" "$g/configs/c.1/f2" "$g/configs/c.1/f3"
+    for _f in ncm.usb0 ecm.usb0 rndis.rn0; do [ ! -d "$g/functions/$_f" ] || rmdir "$g/functions/$_f"; done
+    case $1 in
+        rndis) _fn=rndis.rn0 _bcd=0x0302 _name=RNDIS _a=03 _b=04 ;;
+        ecm) _fn=ecm.usb0 _bcd=0x0301 _name=ecm _a=01 _b=02 ;;
+        *) _fn=ncm.usb0 _bcd=0x0301 _name=ncm _a=01 _b=02 ;;
+    esac
+    if ! mkdir "$g/functions/$_fn" 2>/dev/null; then  # a kernel without that function: NCM
+        log "stage=usb-apply no $_fn in this kernel: ncm"
+        _fn=ncm.usb0 _bcd=0x0301 _name=ncm _a=01 _b=02
+        mkdir "$g/functions/$_fn"
+    fi
+    echo "02:35:58:00:00:$_a" > "$g/functions/$_fn/dev_addr"
+    echo "02:35:58:00:00:$_b" > "$g/functions/$_fn/host_addr"
+    echo "$_bcd" > "$g/bcdDevice"
+    if [ "$_fn" = rndis.rn0 ]; then  # Windows binds RNDIS by the MS OS descriptors (as mu300-linux's init)
+        echo 1 > "$g/os_desc/use"
+        echo 0xcd > "$g/os_desc/b_vendor_code"
+        echo MSFT100 > "$g/os_desc/qw_sign"
+        echo RNDIS > "$g/functions/rndis.rn0/os_desc/interface.rndis/compatible_id"
+        echo 5162001 > "$g/functions/rndis.rn0/os_desc/interface.rndis/sub_compatible_id"
+        [ -e "$g/os_desc/c.1" ] || ln -s "$g/configs/c.1" "$g/os_desc/c.1"
+    fi
+    ln -s "$g/functions/$_fn" "$g/configs/c.1/f1"
+    ln -s "$g/functions/acm.GS0" "$g/configs/c.1/f2"
+    _cfg="$_name + ACM console"
+    if [ "$2" = 1 ]; then
+        mkdir -p "$g/functions/mass_storage.0/lun.0" 2>/dev/null || mkdir "$g/functions/mass_storage.0" 2>/dev/null
+        _l=$g/functions/mass_storage.0/lun.0
+        echo 1 > "$_l/removable"; echo 1 > "$_l/nofua"; echo 0 > "$_l/cdrom"; echo 0 > "$_l/ro"
+        echo "MU5358  Linux disk      0001" > "$_l/inquiry_string"
+        ln -s "$g/functions/mass_storage.0" "$g/configs/c.1/f3"
+        echo 0xa4a2 > "$g/idProduct"
+        _cfg="$_cfg + USB disk"
+    else
+        echo 0xa4a1 > "$g/idProduct"
+    fi
+    echo "$_cfg" > "$g/configs/c.1/strings/0x409/configuration"
+}
+usb_apply() {  # usb_apply ROOT: the composite ROOT's files ask for; a rebind only when it differs from what is bound
+    usb_want "$1"; usb_now
+    _rb=0
+    if [ "$WANT_NET" != "$NOW_NET" ] || [ "$WANT_DISK" != "$NOW_DISK" ]; then
+        _u=$(cat "$g/UDC" 2>/dev/null)
+        [ -n "$_u" ] || _u=$(ls "$UDC_CLASS" 2>/dev/null | head -n 1)
+        echo "" > "$g/UDC" 2>/dev/null
+        usb_compose "$WANT_NET" "$WANT_DISK"
+        [ -z "$_u" ] || echo "$_u" > "$g/UDC" 2>/dev/null
+        _rb=1
+    fi
+    mkdir -p "$1/etc/mu5358" && echo "$WANT_NET" > "$1/etc/mu5358/usb-net-applied"
+    log "stage=usb-apply net=$WANT_NET disk=$WANT_DISK rebind=$_rb"
+}
+# --- usb-apply end
+usb_apply /newroot
 # the system starts its own DHCP and shell; the safety timer goes too (a hung system is the watchdog's)
 # the console's shell too (KILL: an interactive shell ignores TERM): left on ttyGS0, it read half of what was
 # typed to the system's login there (2026-10-29)
