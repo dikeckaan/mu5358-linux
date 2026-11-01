@@ -163,14 +163,27 @@ zero() {
     [ "$(head -c "$_n" "$1" 2>/dev/null | wc -c)" = "$_n" ] || return 1
     [ "$(head -c "$_n" "$1" | tr -d '\000' | head -c 1 | wc -c)" = 0 ]
 }
+# zero_sampled DEV: a MiB at the start, at a quarter, a half, three quarters and the end are zeros. What status asks
+# of fulldumpdb: reading its 2 GiB whole took longer than the web page waits (2026-11-01). Data between the probes
+# goes unseen, so the install path keeps the full check (zero).
+zero_sampled() {
+    _n=$(psize "$1" 2>/dev/null) || return 1
+    [ -n "$_n" ] && [ "$_n" -gt 0 ] || return 1
+    _m=1048576
+    [ "$_n" -gt $((_m * 5)) ] || { zero "$1"; return; }
+    for _o in 0 $((_n / 4 / _m)) $((_n / 2 / _m)) $((_n * 3 / 4 / _m)) $((_n / _m - 1)); do
+        [ "$(dd if="$1" bs=$_m skip=$_o count=1 2>/dev/null | wc -c)" = $_m ] || return 1
+        [ "$(dd if="$1" bs=$_m skip=$_o count=1 2>/dev/null | tr -d '\000' | head -c 1 | wc -c)" = 0 ] || return 1
+    done
+}
 label() { dd if="$1" bs=1 skip=1144 count=10 2>/dev/null; }
 # fulldumpdb: empty (all zeros: Android's full RAM dump, which this firmware never writes), ours, used
-fd_state() {
+fd_state() {  # fd_state [quick]: quick samples the partition (status, every few seconds); an install reads it whole
     _d=$BYNAME/fulldumpdb
     [ -b $_d ] || { echo absent; return; }
     [ "$(label $_d)" = mu5358root ] && { echo ours; return; }
     [ "$(head -c 1048576 $_d 2>/dev/null | wc -c)" = 1048576 ] || { echo unreadable; return; }
-    zero $_d && echo empty || echo used
+    if [ "${1:-}" = quick ]; then zero_sampled $_d; else zero $_d; fi && echo empty || echo used
 }
 # write_part IMG DEV: IMG onto the start of DEV, read back
 write_part() {
@@ -219,7 +232,7 @@ status() {
     printf ',"slot":"%s","magisk":"%s","magiskboot":%s,"misc":"%s","boot_b":"%s","fulldumpdb":"%s","fulldumpdb_size":%s' \
         "$(js "$(prop ro.boot.slot_suffix)")" "$(js "$(magisk -v 2>/dev/null | head -n1)")" \
         "$([ -x /data/adb/magisk/magiskboot ] && echo true || echo false)" "$(bc_state "$_bc")" "$_bstate" \
-        "$(fd_state)" "$(psize $BYNAME/fulldumpdb 2>/dev/null || echo 0)"
+        "$(fd_state quick)" "$(psize $BYNAME/fulldumpdb 2>/dev/null || echo 0)"
     if region_info; then
         printf ',"region":{"state":"%s","start":%s,"size":%s},"userdata":{"start":%s,"size":%s,"kernel_size":%s}' \
             $RSTATE $R0 $RSIZE $UD_START $(( (UD_END + 1 - UD_START) * 512 )) $(( $(ud_kernel_sectors) * 512 ))

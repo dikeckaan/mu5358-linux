@@ -286,11 +286,13 @@ async function refreshStatus() {
   if (!S.dev || !S.dev.script) return;
   try {
     S.status = await S.dev.status();
+    S.statusError = null;
     if (!S.target || !targets(S.status)[S.target] || !targets(S.status)[S.target].ok) S.target = defaultTarget(S.status);
   } catch (e) {
     if (isGone(e)) return;
     S.status = null;
-    S.notice = { kind: "warn", text: errorText(explainError(e)) };
+    // the panel says so and offers another read: the spinner alone sat there after a slow status (2026-11-01)
+    S.statusError = errorText(explainError(e));
   }
   render();
 }
@@ -725,6 +727,8 @@ function panelDevice() {
     p.append(h("div", { class: "actions" }, btn(t("dev.refresh"), () => guarded("status", refreshStatus), "small")));
   } else if (S.rootState === "granted" && S.dev && !S.dev.script) {
     p.append(callout("", t("dev.nostatus.title"), t("dev.nostatus.text")));
+  } else if (S.rootState === "granted" && S.statusError) {
+    p.append(callout("warn", t("dev.status.failed"), S.statusError, h("div", { class: "actions" }, btn(t("dev.refresh"), () => guarded("status", refreshStatus), "primary"))));
   } else if (S.rootState === "granted") p.append(wait(t("dev.status.wait")));
   if (st && S.dev && S.dev.script === ROOT_COPY) p.append(h("p", { class: "small muted" }, t("dev.rootcopy")));
   return p;

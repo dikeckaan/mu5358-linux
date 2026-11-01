@@ -110,6 +110,32 @@ sh {S} _test zero /tmp/z abc 2>/dev/null; echo "bad=$?"
                                'missing': '1', 'none': '1', 'bad': '1'}, r.stdout + r.stderr)
 
 
+class ZeroSampled(Busybox):
+    """zero_sampled FILE: zeros at the head and at three points inside (what status asks of fulldumpdb: the full read
+    of 2 GiB took the web page's 60 s and more, 2026-11-01). Data between the probes is not seen: the install path
+    keeps the full check."""
+    def test_probes_head_quarters_and_tail(self):
+        script = f'''
+head -c 16777216 /dev/zero > /tmp/z
+cp /tmp/z /tmp/mid; printf 'x' | dd of=/tmp/mid bs=1 seek=6000000 conv=notrunc 2>/dev/null
+cp /tmp/z /tmp/q; printf 'x' | dd of=/tmp/q bs=1 seek=4194304 conv=notrunc 2>/dev/null
+cp /tmp/z /tmp/h; printf 'x' | dd of=/tmp/h bs=1 seek=8388608 conv=notrunc 2>/dev/null
+cp /tmp/z /tmp/t; printf 'x' | dd of=/tmp/t bs=1 seek=16777215 conv=notrunc 2>/dev/null
+cp /tmp/z /tmp/s; printf 'x' | dd of=/tmp/s bs=1 seek=0 conv=notrunc 2>/dev/null
+sh {S} _test zero_sampled /tmp/z; echo "all=$?"
+sh {S} _test zero_sampled /tmp/mid; echo "between=$?"
+sh {S} _test zero_sampled /tmp/q; echo "quarter=$?"
+sh {S} _test zero_sampled /tmp/h; echo "half=$?"
+sh {S} _test zero_sampled /tmp/t; echo "tail=$?"
+sh {S} _test zero_sampled /tmp/s; echo "start=$?"
+sh {S} _test zero_sampled /tmp/missing 2>/dev/null; echo "missing=$?"
+'''
+        r = self.sh(script)
+        got = dict(l.split('=') for l in r.stdout.split() if '=' in l)
+        self.assertEqual(got, {'all': '0', 'between': '0', 'quarter': '1', 'half': '1', 'tail': '1', 'start': '1',
+                               'missing': '1'}, r.stdout + r.stderr)
+
+
 class Password(Busybox):
     def test_a_valid_hash_is_kept_for_root_only(self):
         r = self.sh(f'sh {S} password && stat -c "%a %s" /data/adb/mu5358/in/shadow-hash && cat /data/adb/mu5358/in/shadow-hash'
