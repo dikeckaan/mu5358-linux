@@ -314,57 +314,7 @@ ln -sf ../init.d/mu5358-log "$R/etc/rc.d/S13mu5358-log"
 # carrier), mu300's hotplug hook re-enumerated once at 10 s, the Mac did not answer that either, and nothing tried
 # again: the board ran on (Wi-Fi, wan) with no USB until a forced power-off. This one keeps trying, with growing gaps.
 mkdir -p "$R/opt/mu5358/bin"
-cat > "$R/opt/mu5358/bin/usb-watch" <<'EOF'
-#!/bin/sh
-# Re-enumerate the USB gadget (usb_gadget/linux) while no host has it: after 30 s, then 60, 120, 240 and every 300 s,
-# back to 30 once a host has it. With no cable that is one pullup toggle every 5 min. A host has it when the UDC is
-# configured and the NCM link has a carrier: the vendor musb kept saying "configured" after the D+ pullup was off
-# (2026-10-29), so the state alone is not enough.
-G=/sys/kernel/config/usb_gadget/linux
-gap=30
-sleep 30
-while :; do
-	udc=$(cat $G/UDC 2>/dev/null)
-	st=$(cat /sys/class/udc/$udc/state 2>/dev/null)
-	# usb0 by name: reading the NCM function's ifname takes the RTNL lock
-	ifc=usb0
-	# the carrier from the link flags: after a rebind of the controller usb0 lives on with its sysfs directory gone
-	car=0; ip -o link show "${ifc:-usb0}" 2>/dev/null | grep -q LOWER_UP && car=1
-	# a link whose sending side died (2026-10-30: the Mac's DHCP requests kept coming, usb0 sent nothing for minutes,
-	# the Mac sat at 169.254): our TX still for 60 s while RX grew by 3 packets or more. Counters from /proc/net/dev,
-	# which the rebind leaves working.
-	set -- $(awk -v i="${ifc:-usb0}:" '$1 == i { print $3, $11 }' /proc/net/dev)
-	rx=${1:-0}; tx=${2:-0}; t=$(cut -d. -f1 /proc/uptime); stalled=0
-	if [ "$tx" != "${last_tx:-}" ]; then
-		last_tx=$tx; ref_t=$t; ref_rx=$rx
-	elif [ $((t - ref_t)) -ge 60 ] && [ $((rx - ref_rx)) -ge 3 ]; then
-		stalled=1
-	fi
-	if [ -z "$udc" ] || { [ "$st" = configured ] && [ "$car" = 1 ] && [ $stalled = 0 ]; }; then
-		gap=30
-		sleep 10
-		continue
-	fi
-	[ $stalled = 1 ] && st="$st, sending stalled"
-	# a host on the port (a data port: SDP or CDP), else a charger or nothing, and nobody to enumerate with
-	case $(cat /sys/class/power_supply/battery/usb_type 2>/dev/null) in
-		*"[SDP]"*|*"[CDP]"*) ;;
-		*) sleep 10; continue ;;
-	esac
-	# Only the gadget's own rebind: a rebind of the controller (musb-sprd unbind/bind, tried on 2026-10-30) leaves
-	# usb0 with its parent device gone, and the next rtnl_fill_ifinfo oopsed on it holding the RTNL lock - every
-	# network command hung from then on
-	logger -t mu5358-usb "gadget $st (carrier ${car:-none}) on $udc: re-enumerating, next try in ${gap}s"
-	# off for 5 s: long enough for a host's hub to see the device gone
-	echo "" > $G/UDC 2>/dev/null
-	sleep 5
-	echo "$udc" > $G/UDC 2>/dev/null || logger -t mu5358-usb "could not bind $udc again"
-	last_tx=
-	sleep $gap
-	[ $gap -ge 300 ] || gap=$((gap * 2))
-	[ $gap -le 300 ] || gap=300
-done
-EOF
+cp "$U/usb-watch" "$R/opt/mu5358/bin/usb-watch" || { echo "no openwrt/usb/usb-watch" >&2; exit 1; }
 chmod 755 "$R/opt/mu5358/bin/usb-watch"
 cat > "$R/etc/init.d/mu5358-usb" <<'EOF'
 #!/bin/sh /etc/rc.common

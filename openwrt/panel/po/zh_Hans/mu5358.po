@@ -4333,6 +4333,9 @@ msgstr "调整大小（关闭时）"
 msgid "While the drive is on, the computer sees this device as a removable disk as well as the network link; turning it on or off replugs the USB link for a moment. The device itself does not touch the disk while it is exported."
 msgstr "打开后，电脑除网络链路外还会把此设备识别为可移动磁盘；打开或关闭会让 USB 链路短暂重新插拔。磁盘导出期间设备本身不会读写它。"
 
+msgid "The disk comes formatted as FAT32; the computer may format it again as it likes (exFAT for files over 4 GiB). Any size up to the free space less 1 GiB."
+msgstr "磁盘出厂为 FAT32 格式；电脑可以随意重新格式化（超过 4 GiB 的文件用 exFAT）。大小可达剩余空间减 1 GiB。"
+
 msgid "The USB adapter gave no valid reply"
 msgstr "USB 适配器没有给出有效回复"
 

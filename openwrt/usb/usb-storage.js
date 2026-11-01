@@ -26,6 +26,7 @@ return baseclass.extend({
 				E('button', { 'class': 'mud-btn', 'id': 'mud-usb-disk-resize' }, _('Resize (while off)'))
 			]),
 			E('div', { 'class': 'mud-note' }, _('While the drive is on, the computer sees this device as a removable disk as well as the network link; turning it on or off replugs the USB link for a moment. The device itself does not touch the disk while it is exported.')),
+			E('div', { 'class': 'mud-note' }, _('The disk comes formatted as FAT32; the computer may format it again as it likes (exFAT for files over 4 GiB). Any size up to the free space less 1 GiB.')),
 			E('div', { 'class': 'mud-note', 'id': 'mud-usb-disk-msg', 'role': 'status', 'aria-live': 'polite' })
 		]);
 		root.insertBefore(card, before || null);

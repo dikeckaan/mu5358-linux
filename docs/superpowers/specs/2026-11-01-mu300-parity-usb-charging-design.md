@@ -95,6 +95,10 @@ keystore, zip, strings en/tr/zh, css), `M/docs/web-installer.md`, tests `M/tests
 strings, and adds ed25519/releasekey/sha512crypt. Missing by file: `manager.js` (the device manager over adb to
 Linux: needs W5's adb) and `zip.js` (Magisk zips: not used here). The rest is a structural diff.
 
+- The region's size is asked with the USB flash drive in mind (asked 2026-11-01, "userdatayı küçülttüğümüz
+  senaryoda usb boyutunu baya arttırabilmek istiyorum"): the page offers the size as "space for Linux and its USB
+  disk" with the default 4096 MiB (about 2 GiB of disk) beside larger choices (8, 16, 32 GiB and a number), shows
+  what each leaves Android, and the USB card's limit is whatever the region leaves (free space less 1 GiB).
 - Bring every panel, step, answer and wording of mu300's page over, in the three languages, keeping ours only
   where the device differs: the target choice (region behind userdata with the live f2fs shrink, or fulldumpdb),
   the full backup as a step the user sees, the password step, the one-shot trial explanation, the "nothing of

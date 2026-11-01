@@ -4347,6 +4347,9 @@ msgstr "Yeniden boyutlandır (kapalıyken)"
 msgid "While the drive is on, the computer sees this device as a removable disk as well as the network link; turning it on or off replugs the USB link for a moment. The device itself does not touch the disk while it is exported."
 msgstr "Bellek açıkken bilgisayar bu cihazı ağ bağlantısının yanında çıkarılabilir bir disk olarak da görür; açıp kapatmak USB bağlantısını bir anlığına yeniden takar. Cihazın kendisi disk sunulurken ona dokunmaz."
 
+msgid "The disk comes formatted as FAT32; the computer may format it again as it likes (exFAT for files over 4 GiB). Any size up to the free space less 1 GiB."
+msgstr "Disk FAT32 biçimli gelir; bilgisayar onu istediği gibi yeniden biçimlendirebilir (4 GiB üstü dosyalar için exFAT). Boyut, boş alanın 1 GiB eksiğine kadar olabilir."
+
 msgid "The USB adapter gave no valid reply"
 msgstr "USB adaptörü geçerli bir yanıt vermedi"
 

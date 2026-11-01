@@ -135,6 +135,51 @@ image_size_ok() {  # image_size_ok N: a size this filesystem can take
 
 mounted_here() { grep -q " $MNT " "$MOUNTS" 2>/dev/null; }   # the image loop-mounted on the device (storage mount)
 
+# The computer may format the disk as it likes (it is a plain block device to it); a formatter that puts a partition
+# table in front of the filesystem (Windows' and macOS' do, MBR or GPT) moves the filesystem: storage mount finds it.
+od_cmd() {  # the rootfs has no od (hexdump only); the busybox shipped for mkdosfs has one
+    if [ -n "${MU5358_OD:-}" ]; then echo "$MU5358_OD"
+    elif command -v od >/dev/null 2>&1; then echo od
+    else echo "/opt/mu5358/bin/busybox od"; fi
+}
+bytes() {  # bytes OFFSET N: N bytes of the image from OFFSET, decimal, one line
+    $(od_cmd) -An -v -tu1 -j "$1" -N "$2" "$IMG" 2>/dev/null | tr -s ' \n' '  '
+}
+le() {  # le BYTE...: the number the bytes spell, little-endian
+    _v=0 _m=1
+    for _b in "$@"; do _v=$((_v + _b * _m)); _m=$((_m * 256)); done
+    echo $_v
+}
+image_offset() {  # where the filesystem starts: 0, or the first partition's byte offset when a table is in front
+    set -- $(bytes 510 2)
+    [ "${1:-}" = 85 ] && [ "${2:-}" = 170 ] || { echo 0; return; }
+    # a FAT, exFAT or NTFS boot sector carries the same 55 AA: a jump at byte 0 and a BPB (512 bytes a sector; exFAT
+    # keeps its BPB zero and says EXFAT in the OEM name) mean the filesystem is at 0
+    set -- $(bytes 0 1) $(bytes 11 2)
+    case ${1:-} in 233|235)
+        if [ "${2:-}" = 0 ] && [ "${3:-}" = 2 ] || [ "$(dd if="$IMG" bs=1 skip=3 count=8 2>/dev/null)" = "EXFAT   " ]; then echo 0; return; fi ;;
+    esac
+    # MBR: four entries of 16 bytes at 446, status 0x00 or 0x80 (anything else is boot code, not a table)
+    _i=0 _first=0 _type=0
+    while [ $_i -lt 4 ]; do
+        set -- $(bytes $((446 + _i * 16)) 16)
+        [ "${1:-}" = 0 ] || [ "${1:-}" = 128 ] || { echo 0; return; }
+        if [ "${5:-0}" != 0 ] && [ $_first = 0 ]; then _first=$(le "$9" "${10}" "${11}" "${12}"); _type=$5; fi
+        _i=$((_i + 1))
+    done
+    if [ "$_type" = 238 ] && [ "$(dd if="$IMG" bs=1 skip=512 count=8 2>/dev/null)" = "EFI PART" ]; then
+        # GPT: the entry array (its LBA and entry size from the header) holds the partitions, first LBA at +32
+        _array=$(le $(bytes $((512 + 72)) 8)) _esz=$(le $(bytes $((512 + 84)) 4))
+        [ "$_esz" -ge 128 ] 2>/dev/null || _esz=128
+        _i=0 _first=0
+        while [ $_i -lt 4 ] && [ $_first = 0 ]; do
+            _first=$(le $(bytes $((_array * 512 + _i * _esz + 32)) 8))
+            _i=$((_i + 1))
+        done
+    fi
+    echo $((_first * 512))
+}
+
 storage() {
     storage_state
     case ${1:-} in
@@ -184,7 +229,9 @@ storage() {
             [ -e "$IMG" ] || die "no image at $IMG"
             medium_eject
             mkdir -p "$MNT" || die "cannot make $MNT"
-            mount -o loop,uid=0,gid=0 "$IMG" "$MNT" || { medium_insert; die "cannot mount $IMG at $MNT"; }
+            _off=$(image_offset) _o=loop,uid=0,gid=0
+            [ "$_off" = 0 ] || _o="$_o,offset=$_off"
+            mount -o "$_o" "$IMG" "$MNT" || { medium_insert; die "cannot mount $IMG at $MNT"; }
             echo "mounted at $MNT (ejected from the computer meanwhile; mu5358-usb storage umount gives it back)" ;;
         umount)
             umount "$MNT" || die "cannot unmount $MNT"

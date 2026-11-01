@@ -31,7 +31,7 @@ mu300-post is not used: it makes the running slot the default boot (`mu300-next-
 
 | | |
 |---|---|
-| eMMC, USB (NCM/ECM/RNDIS + ACM, a flash drive on demand, adb with keys) | yes (the flash drive and adb: 2026-11-01, `openwrt/usb`; see the USB findings below) |
+| eMMC, USB (NCM/ECM/RNDIS + ACM, a flash drive on demand, adb with keys) | yes (the flash drive and adb: 2026-11-01, `openwrt/usb`; the drive any size, formatted from the computer if wished; see the USB findings below) |
 | Modem, mobile data | yes: Turk Telekom LTE; 14-19 Mbit/s at this place, Android 11-12 on the same spot |
 | Wi-Fi | AIC8800D80X2: hotspot 5 GHz channel 36, HE80 (Wi-Fi 6), WPA2; the board's MAC and calibration |
 | Screen | u30ui2: status bar + home (live graph), network, Wi-Fi, clients, traffic, SMS, battery, system, settings, power, log in three languages; 6 MB RAM, 0.5 % CPU screen on, 0.1 % off (u30ui, the papatya, kept as the classic interface) (no fbcon in GKI: DRM dumb buffers, PAGE_FLIP; the panel is mounted upside down and turns the picture itself, MADCTL through `tools/spispeed/panelcmd`: turned by the CPU it tore) |
@@ -81,6 +81,27 @@ mu300-post is not used: it makes the running slot the default boot (`mu300-next-
   tmpfs), so `/run/mu5358/*` outlives a reboot: the tools treat its markers accordingly (a keep file made before a
   `host` swap does not count). The installer's "a job is running" check now also asks whether the pid is this
   script: the job's pid file outlived a reboot and its number belonged to another process, which blocked an update.
+- **Release v2026.11.01.3 on the bench (trial boot, 2026-11-01, "a real USB stick: format it from the computer, make
+  it big"):** the charger set at boot (`source=typec input_ma=1500 reg00=0x0e`, the battery at 100 % idling at -4 to
+  +2 mA, 30.9 °C, `tcpm` the source). The Mac formatted the drive as it pleased (`diskutil eraseDisk ExFAT MU5358 GPT`:
+  a GUID table and an exFAT partition); the device's `storage mount` reads the table (MBR or GPT; `od` from the
+  shipped busybox, the rootfs has only `hexdump`) and mounts the partition with `offset=` (busybox mount does loop
+  offsets; the kernel has `exfat`, `vfat` and `ntfs3`): a 20 MB file written from the Mac read back with the same
+  sha256, the disk back on the Mac after `umount`. `storage size 16384` made a 16 GiB sparse FAT32 image in a moment
+  (8 MiB used); `storage on` brought the link back in 20 s and the Mac mounted a 17.2 GB "MU5358" (`storage size`
+  takes anything up to the free space less 1 GiB; the default stays 2 GiB).
+  **Two findings in `usb-watch` on the way** (fixed the same day, `openwrt/usb/usb-watch`, tests
+  `tests/test_usb_watch.py`): (1) one bad sample was a re-enumeration - the first `storage on` of the 16 GiB disk was
+  cut short at 19 s while the Mac was still enumerating, the Mac started over, was cut again at 60 and 120 s, adbd's
+  own rebind collided ("could not bind musb-hdrc.1.auto again") and the link never settled; the armed self-undo
+  rebooted the board to Android after 300 s as designed. The watch now acts only on a state that has lasted 60 s and
+  never within 90 s of a bind the tools did on purpose (the uptime in `/run/mu5358/usb-rebound`). (2) The "sending
+  stalled" rule (TX still for 60 s while RX grew) fired on a working link 110 s after boot: the Mac's mDNS kept RX
+  growing and the device owed it nothing. Before calling a sender dead the watch now pings the DHCP lease holder once
+  and looks at TX again. The 300 s reboot self-undo (`( trap "" HUP; sleep 300; [ -e keep ] || reboot ) &`) is the
+  pattern for any rebind trial on the bench: the trial boot returns to Android, where the region can be mounted
+  (`losetup -o 33382465536` on this unit, mksh arithmetic is 32-bit so the byte offset is written out) to turn the
+  drive off in `etc/mu5358/usb-storage` before the next `boot-linux`.
 - Load average ~16 while idle: vendor kernel threads in D state (as on mu300, FINDINGS 31e).
 - **Charging stays at 500 mA without Android** (2026-11-01). Two bq2560x chargers (master i2c 6-006b, slave 4-006b,
   vendor `sqc_bq2560x`/`sqc_charger` under `sprd_charger_manager`). In Android ZTE's userspace policy

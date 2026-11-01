@@ -209,6 +209,60 @@ class Storage(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue(self.image().exists())
 
+    def pc_formatted(self, table):
+        """The computer formatted the disk: a partition table in front of the filesystem (MBR: one FAT partition at
+        LBA 2048; GPT: a protective MBR, a header at LBA 1 pointing at the entry array at LBA 2, one entry starting
+        at LBA 2048)."""
+        self.usb('storage', 'on')
+        img = bytearray(2 << 20)
+        if table == 'mbr':
+            img[446] = 0x00; img[450] = 0x0c; img[454:458] = (2048).to_bytes(4, 'little'); img[458:462] = (2048).to_bytes(4, 'little')
+        else:
+            img[446] = 0x00; img[450] = 0xee; img[454:458] = (1).to_bytes(4, 'little')
+            img[512:520] = b'EFI PART'; img[512 + 72:512 + 80] = (2).to_bytes(8, 'little'); img[512 + 84:512 + 88] = (128).to_bytes(4, 'little')
+            img[1024 + 32:1024 + 40] = (2048).to_bytes(8, 'little'); img[1024 + 40:1024 + 48] = (4095).to_bytes(8, 'little')
+        img[510] = 0x55; img[511] = 0xaa
+        with open(self.image(), 'r+b') as f:
+            f.write(img)
+
+    def test_mount_finds_the_partition_the_computer_made_mbr(self):
+        self.pc_formatted('mbr')
+        r = self.usb('storage', 'mount')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        mount = [c for c in self.calls() if c[0] == 'mount'][0]
+        self.assertIn('offset=1048576', ','.join(mount))
+
+    def test_mount_finds_the_partition_the_computer_made_gpt(self):
+        self.pc_formatted('gpt')
+        r = self.usb('storage', 'mount')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        mount = [c for c in self.calls() if c[0] == 'mount'][0]
+        self.assertIn('offset=1048576', ','.join(mount))
+
+    def test_mount_reads_the_table_with_the_od_given(self):
+        # the rootfs has no od: MU5358_OD (the shipped busybox's on the device) is what reads the image
+        self.pc_formatted('mbr')
+        od = self.bin / 'myod'
+        od.write_text('#!/bin/sh\necho used >> "$STUBLOG.od"\nexec od "$@"\n')
+        od.chmod(0o755)
+        r = self.usb('storage', 'mount', env={'MU5358_OD': str(od)})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(Path(str(self.log) + '.od').exists())
+        self.assertIn('offset=1048576', ','.join([c for c in self.calls() if c[0] == 'mount'][0]))
+
+    def test_mount_of_a_plain_filesystem_has_no_offset(self):
+        # a FAT boot sector has the 55 AA signature too: a jump at byte 0 and a BPB mean no partition table
+        self.usb('storage', 'on')
+        img = bytearray(1 << 20)
+        img[0:3] = b'\xeb\x58\x90'; img[3:11] = b'mkfs.fat'; img[11:13] = (512).to_bytes(2, 'little')
+        img[446] = 0xfa; img[510] = 0x55; img[511] = 0xaa
+        with open(self.image(), 'r+b') as f:
+            f.write(img)
+        r = self.usb('storage', 'mount')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        mount = [c for c in self.calls() if c[0] == 'mount'][0]
+        self.assertNotIn('offset=', ','.join(mount))
+
     def test_on_and_size_refuse_while_the_image_is_mounted_on_the_device(self):
         mounts = self.tmp / 'mounts'
         mounts.write_text(f'/dev/loop0 {self.mnt} vfat rw,relatime 0 0\n')
