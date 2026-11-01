@@ -54,6 +54,12 @@ class Base(unittest.TestCase):
         self.log = self.tmp / 'stub.log'
         for name in ('mkfs.vfat', 'mount', 'umount'):
             self.stub(name)
+        # configfs refuses a function link into a configuration while the gadget is bound (ln: Invalid argument,
+        # seen on the bench 2026-11-01): the stand-in ln does the same
+        ln = self.bin / 'ln'
+        ln.write_text('#!/bin/sh\ncase "$*" in *configs/c.1/f*) [ -z "$(cat "$MU5358_GADGET/UDC" 2>/dev/null)" ] || '
+                      '{ echo "ln: $2: Invalid argument" >&2; exit 1; } ;; esac\nexec /bin/ln "$@"\n')
+        ln.chmod(0o755)
         self.env = dict(os.environ, PATH=f'{self.bin}:{os.environ["PATH"]}', STUBLOG=str(self.log),
                         MU5358_GADGET=str(self.g), MU5358_UDC_CLASS=str(self.udc),
                         MU5358_STORAGE_CONF=str(self.etc / 'usb-storage'), MU5358_USB_DISK=str(self.data / 'usb-disk.img'),
@@ -193,6 +199,15 @@ class Storage(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual([c for c in self.calls() if c[0] == 'umount'][0][-1], str(self.mnt))
         self.assertEqual(self.attr('functions/mass_storage.0/lun.0/file'), str(self.image()))
+
+    def test_free_space_counted_where_the_image_will_live(self):
+        shutil.rmtree(self.data)   # no /data yet: the first "on" makes it, and the free space is its parent's
+        r = self.usb('storage', 'status')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn('free: 0 MiB', r.stdout)
+        r = self.usb('storage', 'on')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(self.image().exists())
 
     def test_usage(self):
         for args in (('storage',), ('storage', 'bogus')):

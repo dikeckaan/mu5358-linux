@@ -60,6 +60,16 @@ mu300-post is not used: it makes the running slot the default boot (`mu300-next-
 - **The USB composite is composed from the state files by `boot/init`** before switch_root (`/etc/mu5358/usb-net`,
   `/etc/mu5358/usb-storage`): a mode never costs a rebind at boot. The flash drive and adb rebind the gadget once when
   they are toggled while plugged in (the computer sees a replug); `mu5358-usb boot` never rebinds.
+- **Bench, 2026-11-01 (the flash drive and adb, the system updated by hand before the release):** `mu5358-usb storage
+  on` while the Mac held the link: the gadget off and on again, ssh back within 10-12 s, the Mac shows the disk
+  (`diskutil`: external, removable, FAT32 "MU5358", 2.1 GB; `idProduct 0xa4a2`); a 100 MB file written from the Mac
+  at 30 MB/s read back on the device with the same sha256 (`storage mount`), and the disk back on the Mac 2 s after
+  `storage umount` (a medium change, no replug). A function cannot be linked into the configuration while the gadget
+  is bound (`ln: Invalid argument`): the tool unbinds, changes, binds. adb: the Mac's key authorised with
+  `mu5358-usb adb key -`, `adb devices` says `device` and `adb shell id` is root; a computer without the key sees
+  `unauthorized` (keys mode). The adbd service's rebind cost the link 12 s. `/etc/mu300` is a symlink to
+  `/etc/mu5358` on the image, which is how mu300's adbd finds `/etc/mu5358/adb_keys`. The gadget's serial string
+  was `MU5358LINUX` without the unit's number on this boot (`androidboot.serialno` not in the command line).
 - Load average ~16 while idle: vendor kernel threads in D state (as on mu300, FINDINGS 31e).
 - **Charging stays at 500 mA without Android** (2026-11-01). Two bq2560x chargers (master i2c 6-006b, slave 4-006b,
   vendor `sqc_bq2560x`/`sqc_charger` under `sprd_charger_manager`). In Android ZTE's userspace policy

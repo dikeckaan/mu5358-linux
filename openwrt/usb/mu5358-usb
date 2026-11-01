@@ -52,14 +52,14 @@ usage() { echo "usage: mu5358-usb $*" >&2; exit 2; }
 w() { printf '%s\n' "$2" > "$1" 2>/dev/null; }   # w FILE VALUE: an attribute, quietly
 
 # --- the gadget
-gadget_bound() { [ -n "$(cat "$G/UDC" 2>/dev/null)" ]; }
-rebind() {  # the gadget bound again (the computer sees a replug); 1 when there is no controller to bind
-    _u=$(cat "$G/UDC" 2>/dev/null)
-    [ -n "$_u" ] || _u=$(ls "$UDC_CLASS" 2>/dev/null | head -n 1)
-    [ -n "$_u" ] || return 1
-    w "$G/UDC" ""
+# A function goes into or out of the configuration only while the gadget is off the controller (configfs: "Invalid
+# argument" otherwise, bench 2026-11-01): unbind, change, bind - the computer sees a replug.
+BOUND=
+unbind() { BOUND=$(cat "$G/UDC" 2>/dev/null); [ -z "$BOUND" ] || w "$G/UDC" ""; }
+bind_back() {  # the controller that was bound, when there was one
+    [ -n "$BOUND" ] || return 0
     sleep "${MU5358_REBIND_PAUSE:-1}"
-    w "$G/UDC" "$_u" || return 1
+    w "$G/UDC" "$BOUND" || { echo "mu5358-usb: could not bind $BOUND again" >&2; return 1; }
     mkdir -p "$RUN" && { cut -d. -f1 /proc/uptime 2>/dev/null || date +%s; } > "$RUN/usb-rebound"
     return 0
 }
@@ -94,8 +94,10 @@ storage_state() {  # ST_ON 0|1, ST_MIB
 storage_write() {  # storage_write on|off MIB
     mkdir -p "$(dirname "$CONF")" && printf '%s %s\n' "$1" "$2" > "$CONF.new.$$" && mv "$CONF.new.$$" "$CONF" || die "cannot write $CONF"
 }
-free_mib() {  # the filesystem's free space where the image lives, in MiB
-    _kb=${MU5358_FREE_KB:-$(df -k "$(dirname "$IMG")" 2>/dev/null | awk 'NR == 2 { print $4 }')}
+free_mib() {  # the filesystem's free space where the image lives (or will: the nearest directory that exists), in MiB
+    _d=$(dirname "$IMG")
+    while [ ! -d "$_d" ] && [ "$_d" != / ] && [ "$_d" != . ]; do _d=$(dirname "$_d"); done
+    _kb=${MU5358_FREE_KB:-$(df -k "$_d" 2>/dev/null | awk 'NR == 2 { print $4 }')}
     case ${_kb:-} in ''|*[!0-9]*) echo 0 ;; *) echo $((_kb / 1024)) ;; esac
 }
 room_mib() {  # what an image may take now: the free space less what is kept for the system
@@ -131,8 +133,9 @@ storage() {
                 ST_MIB=$_mib
             fi
             _was=1; disk_in || _was=0
+            [ $_was = 1 ] || unbind
             disk_add
-            if [ $_was = 0 ] && gadget_bound; then rebind || :; fi
+            [ $_was = 1 ] || bind_back || :
             medium_insert
             storage_write on "$ST_MIB"
             if [ $_was = 0 ]; then echo "USB flash drive: on ($ST_MIB MiB); the USB connection to the computer comes back in a moment"
@@ -140,8 +143,9 @@ storage() {
         off)
             _was=0; disk_in && _was=1
             medium_eject
+            [ $_was = 0 ] || unbind
             disk_remove
-            if [ $_was = 1 ] && gadget_bound; then rebind || :; fi
+            [ $_was = 0 ] || bind_back || :
             storage_write off "$ST_MIB"
             if [ $_was = 1 ]; then echo "USB flash drive: off; the USB connection to the computer comes back in a moment"
             else echo "USB flash drive: off"; fi ;;
