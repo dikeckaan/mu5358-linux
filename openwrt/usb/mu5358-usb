@@ -24,7 +24,7 @@
 #                                    rebind here: a live link to the computer is not cut at boot.
 # Exit codes: 0; 1 refused (a line on stderr); 2 usage. Everything it touches has an override for the tests
 # (tests/test_usb.py): MU5358_GADGET MU5358_CONFIGFS MU5358_UDC_CLASS MU5358_STORAGE_CONF MU5358_USB_DISK MU5358_MKFS
-# MU5358_FREE_KB MU5358_RUN MU5358_MNT MU5358_REBIND_PAUSE MU5358_USBNET MU5358_TYPEC MU5358_DEVICE_USB MU5358_USB_ADB MU5358_HOST_UNDO MU5358_APPLIED.
+# MU5358_FREE_KB MU5358_RUN MU5358_MNT MU5358_REBIND_PAUSE MU5358_PROC_MOUNTS MU5358_USBNET MU5358_TYPEC MU5358_DEVICE_USB MU5358_USB_ADB MU5358_HOST_UNDO MU5358_APPLIED.
 set -u
 export PATH="$PATH:/opt/mu5358/bin:/usr/sbin:/sbin"
 CONFIGFS=${MU5358_CONFIGFS:-/sys/kernel/config}
@@ -34,6 +34,7 @@ CONF=${MU5358_STORAGE_CONF:-/etc/mu5358/usb-storage}
 IMG=${MU5358_USB_DISK:-/data/usb-disk.img}
 RUN=${MU5358_RUN:-/run/mu5358}
 MNT=${MU5358_MNT:-/mnt/usb-disk}
+MOUNTS=${MU5358_PROC_MOUNTS:-/proc/mounts}
 TYPEC=${MU5358_TYPEC:-/sys/class/typec/port0}
 DEVICE_USB=${MU5358_DEVICE_USB:-/usr/libexec/unisoc-modem/device-usb}
 USB_ADB=${MU5358_USB_ADB:-/opt/mu5358/lib/usb-adb}
@@ -47,7 +48,11 @@ INQUIRY="MU5358  Linux disk      0001"   # vendor (8), product (16), revision (4
 PID_PLAIN=0xa4a1 PID_DISK=0xa4a2
 MIB_DEFAULT=2048 MIB_MIN=64 MIB_FLOOR=256 MIB_KEEP=1024
 
-die() { echo "mu5358-usb: $*" >&2; exit 1; }
+die() {  # a refusal; a gadget this run took off the controller goes back on it first (never a stranded link)
+    echo "mu5358-usb: $*" >&2
+    [ -z "${BOUND:-}" ] || [ -n "$(cat "$G/UDC" 2>/dev/null)" ] || bind_back
+    exit 1
+}
 usage() { echo "usage: mu5358-usb $*" >&2; exit 2; }
 w() { printf '%s\n' "$2" > "$1" 2>/dev/null; }   # w FILE VALUE: an attribute, quietly
 
@@ -56,12 +61,20 @@ w() { printf '%s\n' "$2" > "$1" 2>/dev/null; }   # w FILE VALUE: an attribute, q
 # argument" otherwise, bench 2026-11-01): unbind, change, bind - the computer sees a replug.
 BOUND=
 unbind() { BOUND=$(cat "$G/UDC" 2>/dev/null); [ -z "$BOUND" ] || w "$G/UDC" ""; }
-bind_back() {  # the controller that was bound, when there was one
-    [ -n "$BOUND" ] || return 0
-    sleep "${MU5358_REBIND_PAUSE:-1}"
-    w "$G/UDC" "$BOUND" || { echo "mu5358-usb: could not bind $BOUND again" >&2; return 1; }
-    mkdir -p "$RUN" && { cut -d. -f1 /proc/uptime 2>/dev/null || date +%s; } > "$RUN/usb-rebound"
-    return 0
+bind_back() {  # the controller that was bound, when there was one; a bind can fail for a moment while adbd rewrites
+    [ -n "$BOUND" ] || return 0   # its FunctionFS descriptors (mu300-adbd's finding): ten tries, as its bind()
+    _n=0
+    while :; do
+        sleep "${MU5358_REBIND_PAUSE:-1}"
+        if w "$G/UDC" "$BOUND" && [ "$(cat "$G/UDC" 2>/dev/null)" = "$BOUND" ]; then
+            mkdir -p "$RUN" && { cut -d. -f1 /proc/uptime 2>/dev/null || date +%s; } > "$RUN/usb-rebound"
+            BOUND=
+            return 0
+        fi
+        _n=$((_n + 1)); [ "$_n" -lt 10 ] || break
+    done
+    echo "mu5358-usb: could not bind $BOUND again (unplug and plug the cable, or: echo $BOUND > $G/UDC)" >&2
+    return 1
 }
 disk_in() { [ -L "$LINK" ]; }
 disk_add() {  # the mass-storage function into the configuration, without a medium and without a rebind
@@ -120,10 +133,13 @@ image_size_ok() {  # image_size_ok N: a size this filesystem can take
     [ "$1" -le "$_room" ] || die "no room for $1 MiB: $(free_mib) MiB free, $MIB_KEEP MiB kept for the system (at most $_room MiB)"
 }
 
+mounted_here() { grep -q " $MNT " "$MOUNTS" 2>/dev/null; }   # the image loop-mounted on the device (storage mount)
+
 storage() {
     storage_state
     case ${1:-} in
         on)
+            ! mounted_here || die "the image is mounted on the device ($MNT): mu5358-usb storage umount first"
             if [ ! -e "$IMG" ]; then
                 _room=$(room_mib)
                 [ "$_room" -ge $MIB_FLOOR ] || die "not enough room for a USB disk: $(free_mib) MiB free, $MIB_FLOOR MiB needed beside the $MIB_KEEP MiB kept for the system"
@@ -152,6 +168,7 @@ storage() {
         size)
             case ${2:-} in ''|*[!0-9]*) usage "storage size N (MiB)" ;; esac
             [ $ST_ON = 0 ] && ! disk_in || die "the drive is on: turn it off first (mu5358-usb storage off)"
+            ! mounted_here || die "the image is mounted on the device ($MNT): mu5358-usb storage umount first"
             [ "$2" -ge $MIB_MIN ] || die "too small: $MIB_MIN MiB at least"
             image_size_ok "$2"
             image_make "$2"

@@ -209,6 +209,28 @@ class Storage(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue(self.image().exists())
 
+    def test_on_and_size_refuse_while_the_image_is_mounted_on_the_device(self):
+        mounts = self.tmp / 'mounts'
+        mounts.write_text(f'/dev/loop0 {self.mnt} vfat rw,relatime 0 0\n')
+        for args in (('storage', 'on'), ('storage', 'size', '512')):
+            r = self.usb(*args, env={'MU5358_PROC_MOUNTS': str(mounts)})
+            self.assertEqual(r.returncode, 1, args)
+            self.assertIn('umount first', r.stderr)
+        self.assertFalse((self.g / 'configs/c.1/f3').is_symlink())
+        self.assertFalse((self.etc / 'usb-storage').exists())
+        self.assertFalse(self.image().exists())
+
+    def test_a_failure_after_the_unbind_binds_the_gadget_back(self):
+        funcs = self.g / 'functions'
+        funcs.chmod(0o555)   # mkdir of the disk function fails, as on a kernel without it
+        self.addCleanup(funcs.chmod, 0o755)
+        r = self.usb('storage', 'on')
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('cannot make', r.stderr)
+        self.assertEqual(self.attr('UDC'), UDC, 'the gadget was left off the controller')
+        self.assertTrue(self.rebound())
+        self.assertFalse((self.etc / 'usb-storage').exists())
+
     def test_usage(self):
         for args in (('storage',), ('storage', 'bogus')):
             r = self.usb(*args)
