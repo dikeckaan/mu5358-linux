@@ -653,11 +653,17 @@ boot_linux() {
 }
 
 # ---- jobs ------------------------------------------------------------------------------------------------------
+job_running() {  # the job's pid file names a live process that is this script (the file outlives a reboot, and its
+    _p=$(cat $JOB/pid 2>/dev/null)   # number can be another process's by then: the bench, 2026-11-01)
+    case $_p in ''|*[!0-9]*) return 1 ;; esac
+    kill -0 "$_p" 2>/dev/null || return 1
+    tr '\0' ' ' < /proc/$_p/cmdline 2>/dev/null | grep -q mu5358-install
+}
 run() {
     case ${1:-} in install|update|uninstall) ;; *) die "run install|update|uninstall" ;; esac
     _args=$(printf '%s' "${2:-} ${3:-}" | tr -cd 'a-z0-9 -')
     mkdir -p $JOB && chmod 700 $HOME_DIR
-    if [ -f $JOB/pid ] && kill -0 "$(cat $JOB/pid)" 2>/dev/null; then die "a job is running"; fi
+    ! job_running || die "a job is running"
     rm -f $JOB/pid $JOB/exit $JOB/log
     cp "$0" $HOME_DIR/mu5358-install.sh && cp "$HERE/android-files.txt" $HOME_DIR/android-files.txt ||
         die "cannot copy the installer"

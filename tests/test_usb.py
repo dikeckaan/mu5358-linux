@@ -455,11 +455,21 @@ class Host(Base):
         self.assertEqual(self.role(), 'device')
 
     def test_keep_file_cancels_the_undo(self):
+        self.usb('host', env={'MU5358_HOST_UNDO': '3'})
+        time.sleep(1)
+        self.run_dir.mkdir(exist_ok=True)
+        (self.run_dir / 'usb-host-keep').write_text('')   # the tester's decision, after the swap
+        time.sleep(3)
+        self.assertEqual(self.role(), 'host')
+
+    def test_a_stale_keep_file_does_not_cancel_the_undo(self):
+        # /run/mu5358 outlived a reboot on the bench (2026-11-01): a keep file from an earlier test must not count
         self.run_dir.mkdir()
         (self.run_dir / 'usb-host-keep').write_text('')
         self.usb('host')
+        self.assertFalse((self.run_dir / 'usb-host-keep').exists())
         time.sleep(2.5)
-        self.assertEqual(self.role(), 'host')
+        self.assertEqual(self.role(), 'device')
 
     def test_device_puts_it_back(self):
         self.run_dir.mkdir()

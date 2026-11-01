@@ -173,6 +173,22 @@ class BootImage(Busybox):
         self.assertIn('rc=1', r.stdout)
 
 
+class Jobs(Busybox):
+    def test_a_pid_that_is_not_the_installer_is_no_running_job(self):
+        # the pid file outlives a reboot; its number can be another process's by then (the bench, 2026-11-01)
+        script = f'''
+mkdir -p /data/adb/mu5358/job
+(exec sleep 30) & echo $! > /data/adb/mu5358/job/pid
+sh {S} _test job_running; echo "other=$?"
+rm /data/adb/mu5358/job/pid
+sh {S} _test job_running; echo "none=$?"
+echo 999999 > /data/adb/mu5358/job/pid
+sh {S} _test job_running; echo "dead=$?"
+'''
+        r = self.sh(script)
+        self.assertEqual(r.stdout.split(), ['other=1', 'none=1', 'dead=1'], r.stderr)
+
+
 class Entry(Busybox):
     def test_not_root_is_refused_before_anything(self):
         r = self.sh(f'sh {S} status', user='1000:1000')

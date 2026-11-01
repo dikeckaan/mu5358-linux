@@ -229,6 +229,7 @@ role() {  # role host|device
         echo "USB: device (the network link and the console to the computer)"
         return 0
     fi
+    mkdir -p "$RUN"; rm -f "$RUN/usb-host-keep"   # only a keep file made after this swap counts (/run outlives a reboot here)
     printf '%s\n' host > "$TYPEC/data_role" 2>/dev/null ||
         die "the port controller refused the swap (needs a USB-PD partner for a data role swap; the role switch of this kernel takes no userspace writes)"
     _undo=${MU5358_HOST_UNDO:-60}

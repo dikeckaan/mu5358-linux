@@ -70,6 +70,9 @@ mu300-post is not used: it makes the running slot the default boot (`mu300-next-
   `unauthorized` (keys mode). The adbd service's rebind cost the link 12 s. `/etc/mu300` is a symlink to
   `/etc/mu5358` on the image, which is how mu300's adbd finds `/etc/mu5358/adb_keys`. The gadget's serial string
   was `MU5358LINUX` without the unit's number on this boot (`androidboot.serialno` not in the command line).
+  The computer's own "eject" takes the medium out of the removable LUN (`lun.0/file` goes empty; `storage status`
+  then says `exported: no` while the drive is on); `mu5358-usb storage on` puts it back without a replug (the Mac saw
+  the disk again 2 s later), as does the next boot.
 - Load average ~16 while idle: vendor kernel threads in D state (as on mu300, FINDINGS 31e).
 - **Charging stays at 500 mA without Android** (2026-11-01). Two bq2560x chargers (master i2c 6-006b, slave 4-006b,
   vendor `sqc_bq2560x`/`sqc_charger` under `sprd_charger_manager`). In Android ZTE's userspace policy
