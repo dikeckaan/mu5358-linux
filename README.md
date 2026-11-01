@@ -27,7 +27,7 @@ Website: **https://kaandikec.com/mu5358-linux/** (English, Türkçe, 中文)
 
 ## What is missing
 
-Suspend and power saving, charging verified below 100 %, battery-only (unplugged) operation tested over time,
+Suspend and power saving, battery-only (unplugged) operation tested over time,
 Bluetooth, NFC, SIM tray detection, USB OTG host, calls / VoLTE / audio, sending SMS, OpenCL (Android 15's GPU
 driver has none), an installer. A mainline kernel port is started and paused (`mainline/`).
 

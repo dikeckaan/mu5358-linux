@@ -37,7 +37,7 @@ mu300-post is not used: it makes the running slot the default boot (`mu300-next-
 | Screen | u30ui2: status bar + home (live graph), network, Wi-Fi, clients, traffic, SMS, battery, system, settings, power, log in three languages; 6 MB RAM, 0.5 % CPU screen on, 0.1 % off (u30ui, the papatya, kept as the classic interface) (no fbcon in GKI: DRM dumb buffers, PAGE_FLIP; the panel is mounted upside down and turns the picture itself, MADCTL through `tools/spispeed/panelcmd`: turned by the CPU it tore) |
 | GPU | Mali-G57 (arch 9.0.9, DDK r49p1), OpenGL ES 3.2 / EGL 1.5 / Vulkan through Android's libGLES_mali.so in the chroot, on demand (`gpu/README.md`); no OpenCL in Android 15's driver. 60 s stress: 950 MHz, ~100 frames/s of a heavy shader, 40 °C, idle back at 384 MHz and powered off |
 | Buttons | power, Wi-Fi key (volume keys are in the DT, not used) |
-| Battery, charger | vendor charger-manager; at 100 % the battery idles (-5 mA) and the system runs on USB |
+| Battery, charger | vendor charger-manager; `mu5358-charge` sets the input limit from the source (2026-11-01: 1.5 A from the Mac mini's Type-C port, 1.25-1.37 A into the battery, 55 → 83 % in one hour at 32-33 °C, the vendor driver never rewrote it; before: 500 mA, 450 mA into the battery); at 100 % the battery idles (-5 mA) and the system runs on USB |
 | LEDs | none on this board |
 
 ## Known behaviour

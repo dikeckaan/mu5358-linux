@@ -38,7 +38,10 @@ adopted under the mu5358 name; no telnet; the rest to be applied):
     one with the settings carried (`CARRY`: uci config, passwords and keys, the SMS pool and traffic ledger, the
     screen's settings, the web server's own key), then `boot_b`/`init_boot_b`; misc never; a downgrade refused.
     Verified 2026-10-30 (v2026.10.30.5 → .6 with the settings intact). From Linux: still to do
-11. A5 `mu5358-power` - to do (service present, not linked)
+11. A5 `mu5358-power` - **charging done 2026-11-01**: `mu5358-charge` (tools/charge) sets the charger's input limit from
+    the source through the vendor driver's `registers` attribute (1.5 A, 1.3 A into the battery, as Android; the
+    vendor stack alone stayed at 500 mA), with the temperature guard and a charge limit; the power profiles and idle
+    timers of `mu300-power` are still to do
 12. D2 tests + CI - **done**: `tests/` (46 Python tests: the hard rules as static checks, the installer's helpers
     under busybox, the web installer under node; 31 node tests) and `.github/workflows/tests.yml`
 12b. D4 the release workflow - **done 2026-10-31**: `.github/workflows/release.yml` + `tools/ci-release.sh` on
