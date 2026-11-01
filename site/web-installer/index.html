@@ -54,8 +54,10 @@
 <nav class="crumbs" aria-label="Breadcrumb"><a href="../">Home</a> <span aria-hidden="true">/</span> <span aria-current="page">Web installer</span></nav>
 <h1>Web installer</h1>
 <p class="lede">Install MU5358 Linux (OpenWrt) next to Android on a rooted ZTE U30 Pro, start it once, and remove it again: from this page, over USB, in Chrome or Edge. Nothing to install on the computer.</p>
-<div class="callout warn">
-<strong>New, and not yet tested from the browser</strong>
+<div class="callout">
+<strong>Run once from the browser, on the bench (2026-11-01)</strong>
+<p>This page, in Chrome on macOS, connected to one U30 Pro (MU5358, firmware B19, Magisk) over WebUSB, fetched a release from the mirror, checked its signature, put the script on the device, read its state, updated an installed Linux (settings kept) and started it once; Linux answered over SSH 30 s later. One device, one computer, one run: expect rough edges elsewhere. If something goes wrong, save the log (the page can) and <a href="https://github.com/dikeckaan/mu5358-linux/issues">tell us</a>.</p>
+</div>
 <p>The device side of this page (the release's <code>mu5358-install.sh</code>) has been tested over plain adb on one U30 Pro (MU5358, firmware B19, Magisk). This page itself, the browser driving that script over WebUSB, has so far only been run against its own <a href="?demo">demo</a>, not against a real device. Expect rough edges. If something goes wrong, save the log (the page can) and <a href="https://github.com/dikeckaan/mu5358-linux/issues">tell us</a>.</p>
 </div>
 </div>
@@ -139,8 +141,8 @@
 sudo udevadm control --reload &amp;&amp; sudo udevadm trigger</code></pre>
 A browser installed as a snap or flatpak may need its own permission for USB.</div></div>
 <div class="qa"><p><strong>macOS</strong></p>
-<p>Nothing to install. Only another program holding the device stops the browser.</p>
-<div>Quit that program.</div></div>
+<p>Nothing to install. Only another program holding the device stops the browser - and Chrome itself keeps a device claimed for a tab that connected to it earlier, even when that tab is on another window (seen 2026-11-01: three old tabs with this page, “another program is using the device”). The first connection after an adb server was stopped may fail once with “the device went away”.</p>
+<div>Quit that program, close every other tab with this page, connect again.</div></div>
 
 <h2 id="privacy">What the page sees and keeps</h2>
 <ul>

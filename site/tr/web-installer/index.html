@@ -55,8 +55,10 @@
 <nav class="crumbs" aria-label="Konum"><a href="../">Ana sayfa</a> <span aria-hidden="true">/</span> <span aria-current="page">Web kurucu</span></nav>
 <h1>Web kurucu</h1>
 <p class="lede">Root'lu bir ZTE U30 Pro'ya Android'in yanına MU5358 Linux'u (OpenWrt) kurun, bir kez başlatın ve yeniden kaldırın: bu sayfadan, USB ile, Chrome ya da Edge'de. Bilgisayara hiçbir şey kurulmaz.</p>
-<div class="callout warn">
-<strong>Yeni ve tarayıcıdan henüz denenmedi</strong>
+<div class="callout">
+<strong>Tarayıcıdan bir kez, tezgâhta denendi (2026-11-01)</strong>
+<p>Bu sayfa, macOS'ta Chrome'da, tek bir U30 Pro'ya (MU5358, B19 yazılımı, Magisk) WebUSB ile bağlandı, sürümü aynadan aldı, imzasını doğruladı, betiği cihaza koydu, durumunu okudu, kurulu Linux'u güncelledi (ayarlar korundu) ve bir kez başlattı; Linux 30 sn sonra SSH'tan yanıt verdi. Tek cihaz, tek bilgisayar, tek deneme: başka yerlerde pürüz çıkabilir. Bir şey ters giderse günlüğü kaydedin (sayfa kaydedebilir) ve <a href="https://github.com/dikeckaan/mu5358-linux/issues">bize bildirin</a>.</p>
+</div>
 <p>Bu sayfanın cihaz tarafı (sürümün <code>mu5358-install.sh</code> betiği) tek bir U30 Pro'da (MU5358, B19 yazılımı, Magisk) düz adb üzerinden denendi. Sayfanın kendisi, yani betiği WebUSB üzerinden çalıştıran tarayıcı, şimdiye dek yalnızca kendi <a href="?demo">denemesine</a> karşı çalıştırıldı, gerçek bir cihaza karşı değil. Pürüzler olabilir. Bir şey ters giderse günlüğü kaydedin (sayfa kaydedebilir) ve <a href="https://github.com/dikeckaan/mu5358-linux/issues">bize bildirin</a>.</p>
 </div>
 </div>
@@ -140,8 +142,8 @@
 sudo udevadm control --reload &amp;&amp; sudo udevadm trigger</code></pre>
 snap ya da flatpak olarak kurulmuş bir tarayıcının USB için ayrıca izne ihtiyacı olabilir.</div></div>
 <div class="qa"><p><strong>macOS</strong></p>
-<p>Kurulacak bir şey yok. Tarayıcıyı yalnızca cihazı tutan başka bir program durdurur.</p>
-<div>O programı kapatın.</div></div>
+<p>Kurulacak bir şey yok. Tarayıcıyı yalnızca cihazı tutan başka bir program durdurur; Chrome'un kendisi de cihaza daha önce bağlanmış bir sekme için cihazı tutmayı sürdürür, o sekme başka bir pencerede olsa bile (2026-11-01'de görüldü: bu sayfanın üç eski sekmesi, “cihazı başka bir program kullanıyor”). Bir adb sunucusu durdurulduktan sonraki ilk bağlantı bir kez “cihaz gitti” diye başarısız olabilir.</p>
+<div>O programı kapatın, bu sayfanın diğer tüm sekmelerini kapatın, yeniden bağlanın.</div></div>
 
 <h2 id="privacy">Sayfa neyi görür, neyi saklar</h2>
 <ul>

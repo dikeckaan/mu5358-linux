@@ -105,6 +105,21 @@ mu300-post is not used: it makes the running slot the default boot (`mu300-next-
   **Release v2026.11.01.4 on the bench (trial boot, 2026-11-01):** the 16 GiB drive composed by `boot/init`, ssh at
   17 s of uptime, the Mac's 17.2 GB disk mounted, the charger set (`input_ma=1500`), and the patient `usb-watch`
   quiet through the first three minutes (no "re-enumerating" line; the old one had fired at 110 s).
+- **The web installer, end to end from the browser (2026-11-01, Chrome on macOS, the bench unit in Android):** the
+  page connected over WebUSB, fetched v2026.11.01.5 from the mirror (65 MiB), checked SHA256SUMS and its signature,
+  pushed the script, read the device's state, updated the installed v2026.11.01.4 with the settings carried (37
+  files), checked the trial boot dry, and started Linux once: ssh answered 30 s after the click, `adb_keys` and the
+  16 GiB `usb-storage` were still there. Found and fixed on the way: (1) `status` read fulldumpdb's 2 GiB whole,
+  twice, to say "empty" - 73 s on the bench against the page's 60 s, and the panel sat on "Reading the device's
+  state" for good; now five MiB are sampled (2 s) and a failed read shows the error with "Ask again". (2) The panel
+  said "Install again (update)" but ran `install`, which writes the system anew without the carry; `jobKind` in
+  flow.js now picks the script's `update` (no password) where a system is installed. (3) Chrome kept the device
+  claimed for three old tabs of the page in other windows ("another program is using the device"; `ioreg` showed
+  Chrome's user clients on the ADB interface, and even `adb devices` lost the device): close them. (4) The first
+  connection right after `adb kill-server` failed once with "the device went away" (NotFoundError on the retry's
+  open); the page's reconnect on the USB connect event took over. (5) The mirror branch answered 404 for about a
+  minute after the release was published (raw.githubusercontent's cache): "try again" is right. The job's follow
+  stream showed the last lines (boot step, exit) only after a status read; the job itself had finished.
 - Load average ~16 while idle: vendor kernel threads in D state (as on mu300, FINDINGS 31e).
 - **Charging stays at 500 mA without Android** (2026-11-01). Two bq2560x chargers (master i2c 6-006b, slave 4-006b,
   vendor `sqc_bq2560x`/`sqc_charger` under `sprd_charger_manager`). In Android ZTE's userspace policy

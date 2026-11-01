@@ -55,8 +55,10 @@
 <nav class="crumbs" aria-label="Breadcrumb"><a href="../">首页</a> <span aria-hidden="true">/</span> <span aria-current="page">网页安装器</span></nav>
 <h1>网页安装器</h1>
 <p class="lede">在已 root 的中兴 U30 Pro 上与 Android 并存安装 MU5358 Linux（OpenWrt），启动它一次，再把它移除：都在本页面上，通过 USB，用 Chrome 或 Edge 完成。电脑上无需安装任何东西。</p>
-<div class="callout warn">
-<strong>新东西，尚未从浏览器中测试过</strong>
+<div class="callout">
+<strong>已从浏览器在工作台上跑过一次（2026-11-01）</strong>
+<p>本页面在 macOS 的 Chrome 中通过 WebUSB 连接了一台 U30 Pro（MU5358，固件 B19，Magisk），从镜像取得发布版本、校验签名、把脚本放到设备上、读取状态、更新了已安装的 Linux（设置保留）并启动它一次；30 秒后 Linux 通过 SSH 应答。一台设备、一台电脑、一次运行：在其他环境下仍可能遇到问题。如果出了问题，请保存日志（页面可以保存），并<a href="https://github.com/dikeckaan/mu5358-linux/issues">告诉我们</a>。</p>
+</div>
 <p>本页面的设备端（发布版本里的 <code>mu5358-install.sh</code>）已在一台 U30 Pro（MU5358，固件 B19，Magisk）上通过普通 adb 测试过。而页面本身，也就是浏览器通过 WebUSB 驱动该脚本这一部分，目前只对着它自己的<a href="?demo">演示</a>运行过，还没有对着真实设备运行过。请做好遇到问题的准备。如果出了问题，请保存日志（页面可以保存），并<a href="https://github.com/dikeckaan/mu5358-linux/issues">告诉我们</a>。</p>
 </div>
 </div>
@@ -140,8 +142,8 @@
 sudo udevadm control --reload &amp;&amp; sudo udevadm trigger</code></pre>
 以 snap 或 flatpak 方式安装的浏览器可能还需要单独的 USB 权限。</div></div>
 <div class="qa"><p><strong>macOS</strong></p>
-<p>无需安装任何东西。只有其他程序占用设备时浏览器才会受阻。</p>
-<div>退出该程序。</div></div>
+<p>无需安装任何东西。只有其他程序占用设备时浏览器才会受阻；Chrome 自身也会为先前连接过设备的标签页继续占用设备，即使那个标签页在另一个窗口里（2026-11-01 遇到：本页面的三个旧标签页，“另一个程序正在使用设备”）。停止 adb 服务器之后的第一次连接可能会失败一次，提示“设备已断开”。</p>
+<div>退出该程序，关闭本页面的所有其他标签页，然后重新连接。</div></div>
 
 <h2 id="privacy">页面能看到和保存什么</h2>
 <ul>
