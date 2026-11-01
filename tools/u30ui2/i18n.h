@@ -91,6 +91,7 @@ enum { L_EN, L_TR, L_ZH, NLANG };
 	X(S_MODERN, "Dashboard", "Dashboard", "仪表盘") \
 	X(S_CLASSIC, "Classic", "Klasik", "经典") \
 	X(S_BRIGHTNESS, "Brightness", "Parlaklık", "亮度") \
+	X(S_USB_DRIVE, "USB drive", "USB bellek", "U 盘") \
 	X(S_RESTART, "Restart → Android", "Yeniden başlat → Android", "重启 → Android") \
 	X(S_POWER_OFF, "Power off", "Kapat", "关机") \
 	X(S_RESTART_MODEM, "Restart modem", "Modemi yeniden başlat", "重启调制解调器") \

@@ -230,6 +230,14 @@ static void collect_fast(struct data *d, double dt)
 		d->disk_pct = (int)(100 - vs.f_bavail * 100 / vs.f_blocks);
 		d->disk_free_mb = (long)(vs.f_bavail * (unsigned long long)vs.f_frsize / 1048576);
 	}
+	/* the USB flash drive switch (mu5358-usb storage): the first word of its state file */
+	d->usb_storage = 0;
+	if ((f = fopen("/etc/mu5358/usb-storage", "r"))) {
+		char w[8] = "";
+		if (fscanf(f, "%7s", w) == 1 && !strcmp(w, "on"))
+			d->usb_storage = 1;
+		fclose(f);
+	}
 	reads("/proc/uptime", b, sizeof(b));
 	d->uptime_s = atol(b);
 	reads("/proc/loadavg", b, sizeof(b));

@@ -628,8 +628,8 @@ static void draw_system(void)
 	text_fit(FONT_REGULAR, 7, 120, TOP(206, 7), ALIGN_CENTER, K_DIM2, b, 150);
 }
 
-enum { SET_LANG, SET_TIMEOUT, SET_BRIGHT, SET_LOCK, SET_UI, NSET };
-static const int set_label[NSET] = { S_LANGUAGE, S_SCREEN_OFF, S_BRIGHTNESS, S_LOCK, S_INTERFACE };
+enum { SET_LANG, SET_TIMEOUT, SET_BRIGHT, SET_LOCK, SET_UI, SET_USB, NSET };
+static const int set_label[NSET] = { S_LANGUAGE, S_SCREEN_OFF, S_BRIGHTNESS, S_LOCK, S_INTERFACE, S_USB_DRIVE };
 
 static void setting_value(int i, char *v)
 {
@@ -644,6 +644,7 @@ static void setting_value(int i, char *v)
 	case SET_BRIGHT: sprintf(v, "%d%%", brightness); break;
 	case SET_LOCK: strcpy(v, T(lock_mode_hold ? S_HOLD : S_OFF)); break;
 	case SET_UI: strcpy(v, T(S_MODERN)); break;
+	case SET_USB: strcpy(v, T(S.usb_storage ? S_ON : S_OFF)); break;
 	}
 }
 
@@ -653,21 +654,22 @@ static void draw_settings(void)
 	char v[48];
 
 	page_title(S_SETTINGS);
+	/* six rows, 24 px apart: the last one stays above the page dots on the round screen */
 	for (i = 0; i < NSET; i++) {
-		float y = 76 + i * 27;
+		float y = 72 + i * 24;
 
 		setting_value(i, v);
 		row(y, T(set_label[i]), v, K_ACC);
 		if (i < NSET - 1)
-			hairline(y + 15);
+			hairline(y + 13);
 	}
 }
 
 static void settings_tap(int y)
 {
-	int i = (y - 62) / 27;
+	int i = (y - 60) / 24;
 
-	if (y < 62 || i >= NSET)
+	if (y < 60 || i >= NSET)
 		return;
 	switch (i) {
 	case SET_LANG:
@@ -690,6 +692,10 @@ static void settings_tap(int y)
 	case SET_UI:
 		/* the classic interface: mu5358-screen reads /etc/mu5358/ui and starts the other binary */
 		data_run("echo classic > " UI_FILE "; /etc/init.d/mu5358-screen restart");
+		break;
+	case SET_USB:
+		/* the device as a USB flash drive for the computer (mu5358-usb storage); the USB link replugs for a moment */
+		data_run(S.usb_storage ? "/opt/mu5358/bin/mu5358-usb storage off" : "/opt/mu5358/bin/mu5358-usb storage on");
 		break;
 	}
 }

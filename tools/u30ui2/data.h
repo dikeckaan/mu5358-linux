@@ -54,6 +54,7 @@ struct data {
 	double load1, load5;
 	int temp_soc, temp_wcn, temp_pa, temp_bat;	/* degrees C, -1000 unknown */
 	char kernel[40], version[24];
+	int usb_storage;	/* /etc/mu5358/usb-storage says on: the device is a USB flash drive for the computer */
 	/* the log, newest last */
 	int nlog;
 	char log[LOGLINES][96];

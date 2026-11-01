@@ -521,6 +521,15 @@ class Usb(unittest.TestCase):
         self.assertIn('mud-device-grid > section', block)
         self.assertIn('mud-usb-adapters-card', block)
 
+    def test_screen_row(self):
+        self.assertIn('X(S_USB_DRIVE,', (TOP / 'tools/u30ui2/i18n.h').read_text(encoding='utf-8'))
+        ui = (TOP / 'tools/u30ui2/ui.c').read_text(encoding='utf-8')
+        self.assertRegex(ui, r'enum \{ SET_LANG, SET_TIMEOUT, SET_BRIGHT, SET_LOCK, SET_UI, SET_USB, NSET \};')
+        self.assertIn('/opt/mu5358/bin/mu5358-usb storage on', ui)
+        self.assertIn('/opt/mu5358/bin/mu5358-usb storage off', ui)
+        self.assertIn('/etc/mu5358/usb-storage', (TOP / 'tools/u30ui2/data.c').read_text(encoding='utf-8'))
+        self.assertIn('int usb_storage;', (TOP / 'tools/u30ui2/data.h').read_text(encoding='utf-8'))
+
 
 class ScreenRadioLabel(unittest.TestCase):
     """+COPS AcT 13 is E-UTRAN-NR dual connectivity (5G NSA, what this network gives): the dashboard labels it 5G as
