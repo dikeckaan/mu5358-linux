@@ -1,0 +1,182 @@
+#!/bin/sh
+# The U30 Pro's USB-C port (MU5358 Linux; openwrt/customize.sh puts this over the rootfs's mu300 script, which stays
+# as /opt/mu5358/lib/usb-adb for the adb subcommands):
+#   mu5358-usb [status]              the flash drive, the network protocol, adb, the port's data role
+#   mu5358-usb storage on|off        the device as a USB flash drive for the computer as well as the network link: a
+#                                    FAT32 image (/data/usb-disk.img, made at the first "on": 2 GiB, or what the free
+#                                    space allows with 1 GiB kept for the system) exported read-write as a removable
+#                                    disk. Adding or removing it replugs the USB link for a moment (the gadget is bound
+#                                    again); kept across reboots (/etc/mu5358/usb-storage, which boot/init reads: no
+#                                    replug at boot). The device never touches the image while it is exported.
+#   mu5358-usb storage status        on/off, the size, whether it is exported now, the image, the free space
+#   mu5358-usb storage size N        a new, empty image of N MiB (64 .. the free space less 1 GiB); only while off
+#   mu5358-usb storage mount|umount  the image on the device itself (/mnt/usb-disk): ejected from the computer while
+#                                    mounted here, back when unmounted
+#   mu5358-usb net ncm|ecm|rndis [once] | default | (nothing)   the USB network protocol from the next boot on (the
+#                                    control panel's Device page keeps the same choice; /etc/mu5358/usb-net)
+#   mu5358-usb adb ...               adb over USB to this Linux: on|off, auth open|keys, key FILE, keys, status (the
+#                                    rootfs's mu300 tool; keys by default: only a computer whose key is authorised)
+#   mu5358-usb host|device           the port's data role through the Type-C port controller (a data role swap: it
+#                                    needs a USB-PD partner; this kernel's role switch takes no writes from userspace).
+#                                    "host" undoes itself after 60 s unless /run/mu5358/usb-host-keep exists.
+#   mu5358-usb boot                  at boot (/etc/init.d/mu5358-usb-boot): configfs mounted, the disk's medium put in
+#                                    (the image made when missing), the mode init applied noted for the panel. Never a
+#                                    rebind here: a live link to the computer is not cut at boot.
+# Exit codes: 0; 1 refused (a line on stderr); 2 usage. Everything it touches has an override for the tests
+# (tests/test_usb.py): MU5358_GADGET MU5358_CONFIGFS MU5358_UDC_CLASS MU5358_STORAGE_CONF MU5358_USB_DISK MU5358_MKFS
+# MU5358_FREE_KB MU5358_RUN MU5358_MNT MU5358_REBIND_PAUSE MU5358_TYPEC MU5358_DEVICE_USB MU5358_USB_ADB MU5358_HOST_UNDO MU5358_APPLIED.
+set -u
+export PATH="$PATH:/opt/mu5358/bin:/usr/sbin:/sbin"
+CONFIGFS=${MU5358_CONFIGFS:-/sys/kernel/config}
+G=${MU5358_GADGET:-$CONFIGFS/usb_gadget/linux}
+UDC_CLASS=${MU5358_UDC_CLASS:-/sys/class/udc}
+CONF=${MU5358_STORAGE_CONF:-/etc/mu5358/usb-storage}
+IMG=${MU5358_USB_DISK:-/data/usb-disk.img}
+RUN=${MU5358_RUN:-/run/mu5358}
+MNT=${MU5358_MNT:-/mnt/usb-disk}
+TYPEC=${MU5358_TYPEC:-/sys/class/typec/port0}
+DEVICE_USB=${MU5358_DEVICE_USB:-/usr/libexec/unisoc-modem/device-usb}
+USB_ADB=${MU5358_USB_ADB:-/opt/mu5358/lib/usb-adb}
+APPLIED=${MU5358_APPLIED:-/etc/mu5358/usb-net-applied}
+F=$G/functions/mass_storage.0
+LUN=$F/lun.0
+LINK=$G/configs/c.1/f3
+CONFSTR=$G/configs/c.1/strings/0x409/configuration
+DISK_SUFFIX=" + USB disk"
+INQUIRY="MU5358  Linux disk      0001"   # vendor (8), product (16), revision (4)
+PID_PLAIN=0xa4a1 PID_DISK=0xa4a2
+MIB_DEFAULT=2048 MIB_MIN=64 MIB_FLOOR=256 MIB_KEEP=1024
+
+die() { echo "mu5358-usb: $*" >&2; exit 1; }
+usage() { echo "usage: mu5358-usb $*" >&2; exit 2; }
+w() { printf '%s\n' "$2" > "$1" 2>/dev/null; }   # w FILE VALUE: an attribute, quietly
+
+# --- the gadget
+gadget_bound() { [ -n "$(cat "$G/UDC" 2>/dev/null)" ]; }
+rebind() {  # the gadget bound again (the computer sees a replug); 1 when there is no controller to bind
+    _u=$(cat "$G/UDC" 2>/dev/null)
+    [ -n "$_u" ] || _u=$(ls "$UDC_CLASS" 2>/dev/null | head -n 1)
+    [ -n "$_u" ] || return 1
+    w "$G/UDC" ""
+    sleep "${MU5358_REBIND_PAUSE:-1}"
+    w "$G/UDC" "$_u" || return 1
+    mkdir -p "$RUN" && { cut -d. -f1 /proc/uptime 2>/dev/null || date +%s; } > "$RUN/usb-rebound"
+    return 0
+}
+disk_in() { [ -L "$LINK" ]; }
+disk_add() {  # the mass-storage function into the configuration, without a medium and without a rebind
+    mkdir -p "$LUN" 2>/dev/null || mkdir "$F" 2>/dev/null || [ -d "$F" ] || die "cannot make $F (a kernel without USB_CONFIGFS_MASS_STORAGE?)"
+    w "$LUN/removable" 1; w "$LUN/nofua" 1; w "$LUN/cdrom" 0; w "$LUN/ro" 0; w "$LUN/inquiry_string" "$INQUIRY"
+    disk_in || ln -s "$F" "$LINK" || die "cannot link the disk into the configuration"
+    w "$G/idProduct" $PID_DISK
+    _c=$(cat "$CONFSTR" 2>/dev/null)
+    case $_c in *"$DISK_SUFFIX") ;; *) w "$CONFSTR" "$_c$DISK_SUFFIX" ;; esac
+}
+disk_remove() {
+    rm -f "$LINK"
+    rmdir "$LUN" 2>/dev/null; rmdir "$F" 2>/dev/null   # the default lun cannot go on a real configfs: the function dir then stays, unlinked, harmless
+    w "$G/idProduct" $PID_PLAIN
+    _c=$(cat "$CONFSTR" 2>/dev/null)
+    w "$CONFSTR" "${_c%"$DISK_SUFFIX"}"
+}
+medium_insert() { [ -d "$LUN" ] && w "$LUN/file" "$IMG"; }
+medium_eject() { [ -d "$LUN" ] && w "$LUN/file" ""; }
+medium_in() { [ -n "$(cat "$LUN/file" 2>/dev/null)" ]; }
+
+# --- the state and the image
+storage_state() {  # ST_ON 0|1, ST_MIB
+    ST_ON=0 ST_MIB=$MIB_DEFAULT
+    _s= _m=
+    [ ! -r "$CONF" ] || read -r _s _m _rest < "$CONF" || _s= _m=
+    [ "${_s:-}" = on ] && ST_ON=1
+    case ${_m:-} in ''|*[!0-9]*) ;; *) [ "$_m" -ge $MIB_MIN ] && ST_MIB=$_m ;; esac
+}
+storage_write() {  # storage_write on|off MIB
+    mkdir -p "$(dirname "$CONF")" && printf '%s %s\n' "$1" "$2" > "$CONF.new.$$" && mv "$CONF.new.$$" "$CONF" || die "cannot write $CONF"
+}
+free_mib() {  # the filesystem's free space where the image lives, in MiB
+    _kb=${MU5358_FREE_KB:-$(df -k "$(dirname "$IMG")" 2>/dev/null | awk 'NR == 2 { print $4 }')}
+    case ${_kb:-} in ''|*[!0-9]*) echo 0 ;; *) echo $((_kb / 1024)) ;; esac
+}
+room_mib() {  # what an image may take now: the free space less what is kept for the system
+    _f=$(free_mib); echo $((_f - MIB_KEEP))
+}
+mkfs_cmd() {
+    if [ -n "${MU5358_MKFS:-}" ]; then echo "$MU5358_MKFS"
+    elif command -v mkfs.vfat >/dev/null 2>&1; then echo mkfs.vfat
+    elif [ -x /opt/mu5358/bin/busybox ]; then echo "/opt/mu5358/bin/busybox mkdosfs"
+    else echo mkdosfs; fi
+}
+image_make() {  # image_make MIB: a sparse file, FAT32 on it
+    mkdir -p "$(dirname "$IMG")" || die "cannot make $(dirname "$IMG")"
+    rm -f "$IMG"
+    dd if=/dev/zero of="$IMG" bs=1048576 count=0 seek="$1" 2>/dev/null || { rm -f "$IMG"; die "cannot make $IMG ($1 MiB)"; }
+    $(mkfs_cmd) -F 32 -n MU5358 "$IMG" >/dev/null 2>&1 || { rm -f "$IMG"; die "cannot format $IMG ($(mkfs_cmd))"; }
+}
+image_size_ok() {  # image_size_ok N: a size this filesystem can take
+    _room=$(room_mib)
+    [ "$1" -le "$_room" ] || die "no room for $1 MiB: $(free_mib) MiB free, $MIB_KEEP MiB kept for the system (at most $_room MiB)"
+}
+
+storage() {
+    storage_state
+    case ${1:-} in
+        on)
+            if [ ! -e "$IMG" ]; then
+                _room=$(room_mib)
+                [ "$_room" -ge $MIB_FLOOR ] || die "not enough room for a USB disk: $(free_mib) MiB free, $MIB_FLOOR MiB needed beside the $MIB_KEEP MiB kept for the system"
+                _mib=$ST_MIB
+                [ "$_mib" -le "$_room" ] || _mib=$_room
+                image_make "$_mib"
+                ST_MIB=$_mib
+            fi
+            _was=1; disk_in || _was=0
+            disk_add
+            if [ $_was = 0 ] && gadget_bound; then rebind || :; fi
+            medium_insert
+            storage_write on "$ST_MIB"
+            if [ $_was = 0 ]; then echo "USB flash drive: on ($ST_MIB MiB); the USB connection to the computer comes back in a moment"
+            else echo "USB flash drive: on ($ST_MIB MiB)"; fi ;;
+        off)
+            _was=0; disk_in && _was=1
+            medium_eject
+            disk_remove
+            if [ $_was = 1 ] && gadget_bound; then rebind || :; fi
+            storage_write off "$ST_MIB"
+            if [ $_was = 1 ]; then echo "USB flash drive: off; the USB connection to the computer comes back in a moment"
+            else echo "USB flash drive: off"; fi ;;
+        size)
+            case ${2:-} in ''|*[!0-9]*) usage "storage size N (MiB)" ;; esac
+            [ $ST_ON = 0 ] && ! disk_in || die "the drive is on: turn it off first (mu5358-usb storage off)"
+            [ "$2" -ge $MIB_MIN ] || die "too small: $MIB_MIN MiB at least"
+            image_size_ok "$2"
+            image_make "$2"
+            storage_write off "$2"
+            echo "USB flash drive: a new empty image of $2 MiB" ;;
+        status)
+            echo "storage: $([ $ST_ON = 1 ] && echo on || echo off)"
+            echo "size: $ST_MIB MiB"
+            echo "exported: $(disk_in && medium_in && echo yes || echo no)"
+            echo "image: $IMG ($([ -e "$IMG" ] && echo present || echo missing))"
+            echo "free: $(free_mib) MiB" ;;
+        mount)
+            [ -e "$IMG" ] || die "no image at $IMG"
+            medium_eject
+            mkdir -p "$MNT" || die "cannot make $MNT"
+            mount -o loop,uid=0,gid=0 "$IMG" "$MNT" || { medium_insert; die "cannot mount $IMG at $MNT"; }
+            echo "mounted at $MNT (ejected from the computer meanwhile; mu5358-usb storage umount gives it back)" ;;
+        umount)
+            umount "$MNT" || die "cannot unmount $MNT"
+            [ $ST_ON = 1 ] && medium_insert
+            echo "unmounted$([ $ST_ON = 1 ] && echo '; back on the computer')" ;;
+        *) usage "storage on|off|status|size N|mount|umount" ;;
+    esac
+}
+
+case ${1:-status} in
+    storage) shift; storage "$@" ;;
+    status) storage status ;;
+    net|adb|host|device|boot) echo "mu5358-usb: $1: not yet" >&2; exit 2 ;;
+    *) usage "[status] | storage ... | net ... | adb ... | host|device | boot" ;;
+esac
+exit 0
