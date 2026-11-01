@@ -73,6 +73,14 @@ mu300-post is not used: it makes the running slot the default boot (`mu300-next-
   The computer's own "eject" takes the medium out of the removable LUN (`lun.0/file` goes empty; `storage status`
   then says `exported: no` while the drive is on); `mu5358-usb storage on` puts it back without a replug (the Mac saw
   the disk again 2 s later), as does the next boot.
+- **Release v2026.11.01.2 on the bench (trial boot, 2026-11-01):** with `usb-storage` "on" carried by the update,
+  `boot/init` composed the disk before switch_root (`stage=usb-apply net=ncm disk=1 rebind=1`: the early NCM
+  gadget rebuilt once in the initramfs, nothing rebound by the system), `mu5358-usb boot` put the image in at 31 s,
+  the Mac listed the disk at 45 s - the same moment ssh answered - and `adb devices` showed the board with the
+  carried key. `/run` is a plain directory on the root filesystem in this image (only `/tmp` and `/var/run` are
+  tmpfs), so `/run/mu5358/*` outlives a reboot: the tools treat its markers accordingly (a keep file made before a
+  `host` swap does not count). The installer's "a job is running" check now also asks whether the pid is this
+  script: the job's pid file outlived a reboot and its number belonged to another process, which blocked an update.
 - Load average ~16 while idle: vendor kernel threads in D state (as on mu300, FINDINGS 31e).
 - **Charging stays at 500 mA without Android** (2026-11-01). Two bq2560x chargers (master i2c 6-006b, slave 4-006b,
   vendor `sqc_bq2560x`/`sqc_charger` under `sprd_charger_manager`). In Android ZTE's userspace policy
