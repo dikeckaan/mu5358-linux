@@ -24,7 +24,7 @@
 #                                    rebind here: a live link to the computer is not cut at boot.
 # Exit codes: 0; 1 refused (a line on stderr); 2 usage. Everything it touches has an override for the tests
 # (tests/test_usb.py): MU5358_GADGET MU5358_CONFIGFS MU5358_UDC_CLASS MU5358_STORAGE_CONF MU5358_USB_DISK MU5358_MKFS
-# MU5358_FREE_KB MU5358_RUN MU5358_MNT MU5358_REBIND_PAUSE MU5358_TYPEC MU5358_DEVICE_USB MU5358_USB_ADB MU5358_HOST_UNDO MU5358_APPLIED.
+# MU5358_FREE_KB MU5358_RUN MU5358_MNT MU5358_REBIND_PAUSE MU5358_USBNET MU5358_TYPEC MU5358_DEVICE_USB MU5358_USB_ADB MU5358_HOST_UNDO MU5358_APPLIED.
 set -u
 export PATH="$PATH:/opt/mu5358/bin:/usr/sbin:/sbin"
 CONFIGFS=${MU5358_CONFIGFS:-/sys/kernel/config}
@@ -173,10 +173,95 @@ storage() {
     esac
 }
 
+# --- the network protocol (device-usb keeps the choice, in UCI and /etc/mu5358/usb-net, as mu300-linux's panel does)
+USBNET=${MU5358_USBNET:-/etc/mu5358/usb-net}
+net() {
+    case ${1:-} in
+        '')
+            _m=$(sed -n 1p "$USBNET" 2>/dev/null | tr -cd 'a-z')
+            case $_m in ncm|ecm|rndis) ;; *) _m="ncm (the default)" ;; esac
+            [ ! -e "$USBNET.once" ] || _m="$_m (once)"
+            echo "USB network from the next boot: $_m"
+            _a=$(sed -n 1p "$APPLIED" 2>/dev/null | tr -cd 'a-z')
+            echo "this boot: ${_a:-ncm (the default)}" ;;
+        ncm|ecm|rndis)
+            case ${2:-} in '') _s=permanent ;; once) _s=once ;; *) usage "net ncm|ecm|rndis [once] | default" ;; esac
+            [ -x "$DEVICE_USB" ] || die "no $DEVICE_USB (the control panel's USB adapter) on this image"
+            exec "$DEVICE_USB" set-net "$1" "$_s" 1 ;;
+        default)
+            [ -x "$DEVICE_USB" ] || die "no $DEVICE_USB (the control panel's USB adapter) on this image"
+            exec "$DEVICE_USB" set-net ncm permanent 0 ;;
+        *) usage "net ncm|ecm|rndis [once] | default" ;;
+    esac
+}
+
+# --- the port's data role: the Type-C port controller (sprd_tcpm). This kernel's role switch
+# (64a00000.usb-role-switch) has no "role" attribute - the vendor driver allows no userspace control - so the only
+# handle is a USB-PD data role swap, which needs a partner that speaks PD. "host" undoes itself: the port is the way
+# to the computer, and a swap that strands the board must come back on its own.
+role_now() { sed -n 's/.*\[\([a-z]*\)\].*/\1/p' "$TYPEC/data_role" 2>/dev/null; }
+role() {  # role host|device
+    [ -e "$TYPEC/data_role" ] || die "no USB-C port controller to ask ($TYPEC/data_role)"
+    if [ "$1" = device ]; then
+        rm -f "$RUN/usb-host-keep"
+        printf '%s\n' device > "$TYPEC/data_role" 2>/dev/null || die "the port controller refused the swap to device"
+        echo "USB: device (the network link and the console to the computer)"
+        return 0
+    fi
+    printf '%s\n' host > "$TYPEC/data_role" 2>/dev/null ||
+        die "the port controller refused the swap (needs a USB-PD partner for a data role swap; the role switch of this kernel takes no userspace writes)"
+    _undo=${MU5358_HOST_UNDO:-60}
+    if [ "$_undo" != 0 ]; then
+        ( trap '' HUP; sleep "$_undo"
+          [ -e "$RUN/usb-host-keep" ] || { printf '%s\n' device > "$TYPEC/data_role" 2>/dev/null
+              logger -t mu5358-usb "host mode undone after $_undo s (no $RUN/usb-host-keep)" 2>/dev/null || :; }
+        ) </dev/null >/dev/null 2>&1 &
+        echo "USB: host asked of the port controller; back to device in $_undo s unless $RUN/usb-host-keep exists (touch it to keep host mode)"
+    else
+        echo "USB: host asked of the port controller"
+    fi
+}
+
+# --- at boot
+boot() {
+    if [ -z "${MU5358_GADGET:-}" ] && ! grep -q " $CONFIGFS configfs " /proc/mounts 2>/dev/null; then
+        mount -t configfs configfs "$CONFIGFS" 2>/dev/null || echo "cannot mount configfs at $CONFIGFS"
+    fi
+    mkdir -p "$RUN"
+    [ ! -s "$APPLIED" ] || cp "$APPLIED" "$RUN/usb-net-applied"
+    storage_state
+    [ $ST_ON = 1 ] || return 0
+    if ! disk_in; then
+        echo "usb disk: on, but this boot's init did not add it (update from the page once); not rebinding a live link"
+        return 0
+    fi
+    if [ ! -e "$IMG" ]; then
+        _room=$(room_mib)
+        if [ "$_room" -lt $MIB_FLOOR ]; then
+            echo "usb disk: no image and no room for one ($(free_mib) MiB free): nothing exported"; return 0
+        fi
+        _mib=$ST_MIB; [ "$_mib" -le "$_room" ] || _mib=$_room
+        image_make "$_mib"
+        [ "$_mib" = "$ST_MIB" ] || storage_write on "$_mib"
+    fi
+    medium_insert
+    echo "usb disk: $IMG exported"
+}
+
+status() {
+    storage status
+    net
+    if [ -x "$USB_ADB" ]; then "$USB_ADB" adb status 2>/dev/null | sed -n '/^adb: /p; /^auth: /p'; else echo "adb: unavailable"; fi
+    echo "role: $(role_now)"
+}
+
 case ${1:-status} in
     storage) shift; storage "$@" ;;
-    status) storage status ;;
-    net|adb|host|device|boot) echo "mu5358-usb: $1: not yet" >&2; exit 2 ;;
+    status) status ;;
+    net) shift; net "$@" ;;
+    adb) [ -x "$USB_ADB" ] || die "adb is not on this image ($USB_ADB)"; exec "$USB_ADB" "$@" ;;
+    host|device) role "$1" ;;
+    boot) boot ;;
     *) usage "[status] | storage ... | net ... | adb ... | host|device | boot" ;;
 esac
 exit 0

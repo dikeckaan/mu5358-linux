@@ -310,5 +310,132 @@ usb_apply {root}
         self.assertLess(text.index('usb_apply /newroot'), text.index('kill $timer $console'))
 
 
+class Boot(Base):
+    """mu5358-usb boot: the medium in, the image made when missing, the applied mode copied; never a rebind."""
+
+    def disk_function(self):
+        lun = self.g / 'functions/mass_storage.0/lun.0'
+        lun.mkdir(parents=True)
+        (lun / 'file').write_text('\n')
+        os.symlink(self.g / 'functions/mass_storage.0', self.g / 'configs/c.1/f3')
+        return lun
+
+    def test_inserts_the_medium_when_on_and_the_function_is_there(self):
+        lun = self.disk_function()
+        (self.etc / 'usb-storage').write_text('on 2048\n')
+        self.image().write_bytes(b'x')
+        r = self.usb('boot')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual((lun / 'file').read_text().strip(), str(self.image()))
+        self.assertFalse(self.rebound())
+        self.assertEqual([c for c in self.calls() if c[0] == 'mkfs.vfat'], [])
+
+    def test_makes_the_image_when_missing(self):
+        lun = self.disk_function()
+        (self.etc / 'usb-storage').write_text('on 2048\n')
+        r = self.usb('boot')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(len([c for c in self.calls() if c[0] == 'mkfs.vfat']), 1)
+        self.assertEqual(os.stat(self.image()).st_size, 2048 << 20)
+        self.assertEqual((lun / 'file').read_text().strip(), str(self.image()))
+
+    def test_without_the_function_it_says_so_and_does_not_rebind(self):
+        (self.etc / 'usb-storage').write_text('on 2048\n')
+        r = self.usb('boot')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn('update from the page once', r.stdout + r.stderr)
+        self.assertFalse((self.g / 'configs/c.1/f3').is_symlink())
+        self.assertFalse(self.rebound())
+
+    def test_copies_the_applied_mode_to_run(self):
+        (self.etc / 'usb-net-applied').write_text('rndis\n')
+        r = self.usb('boot', env={'MU5358_APPLIED': str(self.etc / 'usb-net-applied')})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual((self.run_dir / 'usb-net-applied').read_text().strip(), 'rndis')
+
+    def test_off_does_nothing(self):
+        (self.etc / 'usb-storage').write_text('off 2048\n')
+        r = self.usb('boot')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(self.image().exists())
+        self.assertEqual(self.calls(), [])
+
+
+class Net(Base):
+    def setUp(self):
+        super().setUp()
+        self.stub('device-usb')
+        self.stub('usb-adb')
+        self.env.update(MU5358_DEVICE_USB=str(self.bin / 'device-usb'), MU5358_USB_ADB=str(self.bin / 'usb-adb'),
+                        MU5358_USBNET=str(self.etc / 'usb-net'), MU5358_APPLIED=str(self.etc / 'usb-net-applied'))
+
+    def test_delegates_to_device_usb(self):
+        for args, want in ((('net', 'rndis', 'once'), ['set-net', 'rndis', 'once', '1']),
+                           (('net', 'ecm'), ['set-net', 'ecm', 'permanent', '1']),
+                           (('net', 'default'), ['set-net', 'ncm', 'permanent', '0'])):
+            self.log.unlink(missing_ok=True)
+            r = self.usb(*args)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(self.calls(), [['device-usb', *want]], args)
+        self.assertEqual(self.usb('net', 'bogus').returncode, 2)
+
+    def test_shows_the_choice(self):
+        (self.etc / 'usb-net').write_text('ecm\n')
+        (self.etc / 'usb-net.once').write_text('')
+        (self.etc / 'usb-net-applied').write_text('ncm\n')
+        r = self.usb('net')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn('ecm (once)', r.stdout)
+        self.assertIn('this boot: ncm', r.stdout)
+        self.assertEqual(self.calls(), [])
+
+    def test_adb_delegates(self):
+        r = self.usb('adb', 'key', '-', stdin='QAAAA...=\n')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.calls(), [['usb-adb', 'adb', 'key', '-']])
+
+
+class Host(Base):
+    def setUp(self):
+        super().setUp()
+        self.typec = self.tmp / 'typec'
+        self.typec.mkdir()
+        (self.typec / 'data_role').write_text('[device] host\n')
+        self.env.update(MU5358_TYPEC=str(self.typec), MU5358_HOST_UNDO='1')
+
+    def role(self):
+        return (self.typec / 'data_role').read_text().strip()
+
+    def test_host_writes_the_data_role_and_undoes_itself(self):
+        r = self.usb('host')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.role(), 'host')
+        self.assertIn('usb-host-keep', r.stdout)
+        time.sleep(2.5)
+        self.assertEqual(self.role(), 'device')
+
+    def test_keep_file_cancels_the_undo(self):
+        self.run_dir.mkdir()
+        (self.run_dir / 'usb-host-keep').write_text('')
+        self.usb('host')
+        time.sleep(2.5)
+        self.assertEqual(self.role(), 'host')
+
+    def test_device_puts_it_back(self):
+        self.run_dir.mkdir()
+        (self.run_dir / 'usb-host-keep').write_text('')
+        (self.typec / 'data_role').write_text('[host] device\n')
+        r = self.usb('device')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.role(), 'device')
+        self.assertFalse((self.run_dir / 'usb-host-keep').exists())
+
+    def test_no_typec_is_refused(self):
+        r = self.usb('host', env={'MU5358_TYPEC': str(self.tmp / 'nowhere')})
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('no USB-C port controller', r.stderr)
+        self.assertEqual(self.role(), '[device] host')
+
+
 if __name__ == '__main__':
     unittest.main()
