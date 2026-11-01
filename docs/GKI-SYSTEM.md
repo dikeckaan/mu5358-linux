@@ -102,6 +102,9 @@ mu300-post is not used: it makes the running slot the default boot (`mu300-next-
   pattern for any rebind trial on the bench: the trial boot returns to Android, where the region can be mounted
   (`losetup -o 33382465536` on this unit, mksh arithmetic is 32-bit so the byte offset is written out) to turn the
   drive off in `etc/mu5358/usb-storage` before the next `boot-linux`.
+  **Release v2026.11.01.4 on the bench (trial boot, 2026-11-01):** the 16 GiB drive composed by `boot/init`, ssh at
+  17 s of uptime, the Mac's 17.2 GB disk mounted, the charger set (`input_ma=1500`), and the patient `usb-watch`
+  quiet through the first three minutes (no "re-enumerating" line; the old one had fired at 110 s).
 - Load average ~16 while idle: vendor kernel threads in D state (as on mu300, FINDINGS 31e).
 - **Charging stays at 500 mA without Android** (2026-11-01). Two bq2560x chargers (master i2c 6-006b, slave 4-006b,
   vendor `sqc_bq2560x`/`sqc_charger` under `sprd_charger_manager`). In Android ZTE's userspace policy
