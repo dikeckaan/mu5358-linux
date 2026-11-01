@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { classifyLine, parseStatus, parseSums, passwordProblem, validPassword, bootBlockers, installBlockers,
-  REGION_MIN, ROOT_MIB, DATA_NEED } from "../../site/assets/web-installer/flow.js";
+  REGION_MIN, ROOT_MIB, DATA_NEED, jobKind } from "../../site/assets/web-installer/flow.js";
 
 const TOP = new URL("../../", import.meta.url);
 
@@ -135,4 +135,15 @@ test("the constants match the device script", () => {
   assert.ok(s.includes(`[ "$_mib" -ge ${REGION_MIN} ]`), "REGION_MIN");
   assert.ok(s.includes(`ROOT_MIB=${ROOT_MIB} `), "ROOT_MIB");
   assert.ok(s.includes(`[ "$_free" -ge $((${DATA_NEED / 1024 / 1024} * 1024)) ]`), "DATA_NEED");
+});
+
+// jobKind: the device script's "update" (keeps the settings, no password) when a system is installed where the user
+// points; "install" (fresh, a password) everywhere else. Found 2026-11-01: the page said "Install again (update)" and
+// ran install, which would have wiped the installed system's settings.
+test("jobKind: update where a system is installed, install elsewhere", () => {
+  const st = { installed: "v2026.11.01.4", root: "region" };
+  assert.equal(jobKind(st, "region"), "update");
+  assert.equal(jobKind(st, "fulldumpdb"), "install");
+  assert.equal(jobKind({ installed: "", root: "" }, "region"), "install");
+  assert.equal(jobKind(null, "region"), "install");
 });

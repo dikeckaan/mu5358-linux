@@ -82,6 +82,9 @@ export const isMu5358 = (st) => /MU5358/i.test(st.model + " " + st.device) || /U
 // the partition table was changed in this Android's boot (a shrink): Android must start once before anything else
 export const rebootPending = (st) => !!(st && st.userdata && st.userdata.size !== null && st.userdata.kernel_size !== null &&
   st.userdata.size !== st.userdata.kernel_size);
+// "update" where a system is installed and the user points at it (the script keeps the settings, wants no
+// password); "install" everywhere else (fresh, a password)
+export const jobKind = (st, target) => (st && st.installed && st.root === target ? "update" : "install");
 export const jobRunning = (st) => !!st && st.job === "running";
 export const jobExit = (st) => (st && /^exit-(\d+)$/.test(st.job) ? Number(st.job.slice(5)) : null);
 

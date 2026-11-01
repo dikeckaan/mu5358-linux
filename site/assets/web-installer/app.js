@@ -16,7 +16,7 @@ import { fingerprint } from "./adb/key.js";
 import { ADB_FILTERS, findAdbInterface, openUsbTransport, platformOf } from "./adb/usb.js";
 import { DeviceError, Mu5358Device, ROOT_COPY, STAGED_SCRIPT } from "./device.js";
 import { INSTALL_STEPS, MIB, REGION_DEFAULT, UNINSTALL_STEPS, bootBlockers, defaultTarget, deviceBlockers, fmtSize, installBlockers,
-  jobExit, jobRunning, parseSums, passwordProblem, propBlockers, rebootPending, targets } from "./flow.js";
+  jobExit, jobKind, jobRunning, parseSums, passwordProblem, propBlockers, rebootPending, targets } from "./flow.js";
 import { F, GithubError, filesOf, loadReleases } from "./github.js";
 import { loadKey } from "./keystore.js";
 import { MirrorError, downloadRelease, loadMirror, mirrorHas } from "./mirror.js";
@@ -482,9 +482,11 @@ async function install() {
   if (!st || !S.verified || !S.target) return;
   const t0 = targets(st)[S.target];
   if (!t0.ok) return;
-  const args = S.target === "fulldumpdb" ? ["fulldumpdb"] : t0.fixed ? ["region"] : ["region", String(S.mib)];
-  if (passwordProblem(S.pw.a, S.pw.b) || S.busy) return;
+  const kind = jobKind(st, S.target);
+  const args = kind === "update" ? [] : S.target === "fulldumpdb" ? ["fulldumpdb"] : t0.fixed ? ["region"] : ["region", String(S.mib)];
+  if (S.busy || (kind === "install" && passwordProblem(S.pw.a, S.pw.b))) return;
   S.confirm = false;
+  if (kind === "update") { S.pwHash = ""; await startInstall(args, "update"); return; }
   // the password's hash is made here, once: the device gets the hash and never the password (sha512crypt.js); the
   // password itself is masked out of the log from now on, should it ever appear there
   S.busy = "install"; S.notice = null;
@@ -495,15 +497,15 @@ async function install() {
   }
   masker.add(S.pw.a, "***");
   S.busy = "";
-  await startInstall(args);
+  await startInstall(args, "install");
 }
 
 // the installation, from the files on the device: also what goes on after Android's restart (afterStatus), with
 // the hash made when Install was pressed - the device wants the password before every run install
-async function startInstall(args) {
+async function startInstall(args, kind = "install") {
   if (S.busy) return;
   S.busy = "install"; S.notice = null;
-  S.job = newJob("install", "push");
+  S.job = newJob(kind, "push");
   S.job.args = args;
   render();
   try {
@@ -518,11 +520,13 @@ async function startInstall(args) {
       await S.dev.take(S.verified.sumsSha);
       S.taken = S.verified.tag;
     }
-    if (!S.pwHash) throw new DeviceError("no-password");
-    S.job.phase = "password"; render();
-    await S.dev.password(S.pwHash);
+    if (kind === "install") {
+      if (!S.pwHash) throw new DeviceError("no-password");
+      S.job.phase = "password"; render();
+      await S.dev.password(S.pwHash);
+    }
     S.job.phase = "start"; render();
-    await S.dev.run("install", ...args);
+    await S.dev.run(kind, ...args);
   } catch (e) {
     S.job.phase = "end"; S.job.error = errorText(explainError(e)); S.busy = "";
     if (!isGone(e)) await refreshStatus();
@@ -571,7 +575,7 @@ async function followJob() {
     if (j.kind === "install" && exit === 3 && j.rebootNeeded) {
       S.resume = { args: j.args || ["region", String(S.mib)] };
       j.error = "";
-    } else if (j.kind === "install" && exit === 0) {
+    } else if ((j.kind === "install" || j.kind === "update") && exit === 0) {
       S.taken = "";
       S.pw = { a: "", b: "", show: false }; S.pwHash = "";          // set on the device now; the page keeps nothing
     }
@@ -812,9 +816,18 @@ function panelInstall() {
     opt("region", t("inst.region"), t("inst.region.text"), tg.region.ok, tg.region.why, sizes),
     opt("fulldumpdb", t("inst.fd"), t("inst.fd.text"), tg.fulldumpdb.ok, tg.fulldumpdb.why)));
   if (st.boot_b === "other") p.append(callout("warn", t("inst.bootb.other.title"), t("inst.bootb.other.text")));
-  p.append(h("p", {}, t("inst.writes")));
-  p.append(h("ul", {}, [t("inst.w.backup"), S.target === "region" && !tg.region.fixed ? t("inst.w.shrink") : null, t("inst.w.chain"), t("inst.w.system." + (S.target || "region")), t("inst.w.boot")].filter(Boolean).map((x) => h("li", {}, x))));
+  const updating = jobKind(st, S.target) === "update";
+  p.append(h("p", {}, updating ? t("inst.update.text", st.installed) : t("inst.writes")));
+  p.append(h("ul", {}, (updating
+    ? [t("inst.w.keep"), t("inst.w.chain"), t("inst.w.system." + (S.target || "region")), t("inst.w.boot")]
+    : [t("inst.w.backup"), S.target === "region" && !tg.region.fixed ? t("inst.w.shrink") : null, t("inst.w.chain"), t("inst.w.system." + (S.target || "region")), t("inst.w.boot")]).filter(Boolean).map((x) => h("li", {}, x))));
   p.append(h("p", { class: "small" }, t("inst.never")));
+  if (updating) {
+    if (!S.verified) { p.append(callout("", t("inst.needfiles.title"), t("inst.needfiles.text"))); return p; }
+    p.append(h("label", { class: "wi-opt" }, h("input", { type: "checkbox", checked: S.confirm, disabled: !!S.busy, onchange: (ev) => { S.confirm = ev.target.checked; render(); } }), h("span", {}, t("inst.confirm"))));
+    p.append(h("div", { class: "actions" }, btn(t("inst.button.update", S.verified.tag), install, "primary", { id: "wi-install", disabled: !!S.busy || !S.confirm })));
+    return p;
+  }
   // root's password: typed twice, checked as it is typed (pwSync: the hint and the button, without drawing the
   // panel again, so the field keeps the cursor)
   p.append(h("h3", {}, t("inst.pw.title")), h("p", { class: "small" }, t("inst.pw.text")), h("p", { class: "small muted" }, t("inst.pw.rules")));
