@@ -1,0 +1,11 @@
+#!/bin/sh /etc/rc.common
+# U30 Pro: the USB tool's boot step (/opt/mu5358/bin/mu5358-usb boot): configfs mounted, the flash drive's medium put
+# in when the drive is on (boot/init added the function before switch_root; the image is made here when missing), the
+# network mode init applied noted for the panel. Never a rebind: a live link to the computer is not cut at boot.
+# Early (S12): before mu5358-adbd (S19) and the panel's USB adapter (unisoc-modem-ui, S95).
+START=12
+
+start() {
+	[ -x /opt/mu5358/bin/mu5358-usb ] || return 0
+	/opt/mu5358/bin/mu5358-usb boot 2>&1 | logger -t mu5358-usb
+}

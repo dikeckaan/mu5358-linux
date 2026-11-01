@@ -530,6 +530,31 @@ class Usb(unittest.TestCase):
         self.assertIn('/etc/mu5358/usb-storage', (TOP / 'tools/u30ui2/data.c').read_text(encoding='utf-8'))
         self.assertIn('int usb_storage;', (TOP / 'tools/u30ui2/data.h').read_text(encoding='utf-8'))
 
+    def test_in_image(self):
+        c = CUSTOMIZE.read_text(encoding='utf-8')
+        for s_ in ('opt/mu5358/lib/usb-adb', 'opt/mu5358/bin/mu5358-usb"', 'usr/libexec/rpcd/mu5358usb', 'acl.d/luci-app-mu5358-usb.json',
+                   'resources/mu5358/usb-storage.js', 'S12mu5358-usb-boot'):
+            self.assertIn(s_, c)
+        init = (TOP / 'openwrt/usb/mu5358-usb-boot.init').read_text(encoding='utf-8')
+        self.assertIn('START=12', init)
+        self.assertIn('/opt/mu5358/bin/mu5358-usb boot', init)
+
+    def test_adb_on_with_keys(self):
+        c = CUSTOMIZE.read_text(encoding='utf-8')
+        self.assertIn('echo on > "$R/etc/mu5358/adb"', c)
+        self.assertNotIn('echo off > "$R/etc/mu5358/adb"', c)
+        self.assertIn('echo keys > "$R/etc/mu5358/adb_auth"', c)
+        self.assertIn('S19mu5358-adbd', c)
+        for s_ in ('64a00000.usb-role-switch', 'configs/c.1/f4', 'CONFIG_USB_CONFIGFS_F_FS=y'):
+            self.assertIn(s_, c)
+
+    def test_carry(self):
+        carry = INSTALLER.read_text(encoding='utf-8')
+        carry = carry[carry.index('CARRY="'):]
+        carry = carry[:carry.index('"', 7)]
+        for s_ in ('etc/mu5358/usb-storage', 'etc/mu5358/adb_auth', 'etc/mu5358/adb_keys', 'etc/mu5358/adb', 'etc/mu5358/usb-net'):
+            self.assertIn(s_, carry.split())
+
 
 class ScreenRadioLabel(unittest.TestCase):
     """+COPS AcT 13 is E-UTRAN-NR dual connectivity (5G NSA, what this network gives): the dashboard labels it 5G as

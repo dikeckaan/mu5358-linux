@@ -11,7 +11,7 @@ R=${1:?usage: customize.sh ROOT}
 
 # The tree is mu300-linux's openwrt-luci rootfs after rebrand.sh (every mu300 name is mu5358 here). Its services: the
 # ones this board runs get their rc.d links (rebrand.sh took them all away: the rest drive F50 / U30 Air hardware or
-# are not ported yet - power, cpu, modem-log, ndp, wifi-client, adbd).
+# are not ported yet - power, cpu, modem-log, ndp, wifi-client; adbd is on since 2026-11-01, below).
 for s in mu5358-accounts:11 mu5358-atd:19 mu5358-atd-dash:19 mu5358-smsd:95 mu5358-traffic:96 mu5358-toolkit:96 mu5358-user-packages:99; do
     n=${s%:*}; k=${s#*:}
     [ -f "$R/etc/init.d/$n" ] || { echo "$R: no service $n (not the openwrt-luci tree?)" >&2; exit 1; }
@@ -30,8 +30,46 @@ if [ -f "$PUBKEY" ]; then
 else
     rm -f "$R/opt/mu5358/lib/release.pub"
 fi
-# mu300's adbd is not this board's (its USB hook waits for adbd's rebind unless adb is off)
-mkdir -p "$R/etc/mu5358" && echo off > "$R/etc/mu5358/adb"
+# USB (openwrt/usb, 2026-11-01): mu5358-usb - the flash-drive mode, the network protocol, host/device, the boot step -
+# put over the rootfs's mu300 script, which stays as /opt/mu5358/lib/usb-adb for its adb subcommands; the panel's rpcd
+# object and its card on System > Device; adb to Linux on, with keys (mu300's adbd on this kernel's FunctionFS).
+# boot/init composes the gadget from /etc/mu5358/usb-net and usb-storage; docs/GKI-SYSTEM.md has the measurements.
+U=$(cd "$(dirname "$0")" && pwd)/usb
+f="$R/opt/mu5358/bin/mu5358-usb"
+if [ -f "$f" ] && grep -q mu5358-adbd "$f"; then
+    mkdir -p "$R/opt/mu5358/lib" && mv "$f" "$R/opt/mu5358/lib/usb-adb"
+fi
+[ -x "$R/opt/mu5358/lib/usb-adb" ] || { echo "$R: no mu300 USB script to keep as opt/mu5358/lib/usb-adb (adb)" >&2; exit 1; }
+cp "$U/mu5358-usb" "$R/opt/mu5358/bin/mu5358-usb" && chmod 755 "$R/opt/mu5358/bin/mu5358-usb"
+cp "$U/rpcd-mu5358usb" "$R/usr/libexec/rpcd/mu5358usb" && chmod 755 "$R/usr/libexec/rpcd/mu5358usb"
+cp "$U/acl-mu5358usb.json" "$R/usr/share/rpcd/acl.d/luci-app-mu5358-usb.json"
+mkdir -p "$R/www/luci-static/resources/mu5358" && cp "$U/usb-storage.js" "$R/www/luci-static/resources/mu5358/usb-storage.js"
+cp "$U/mu5358-usb-boot.init" "$R/etc/init.d/mu5358-usb-boot" && chmod 755 "$R/etc/init.d/mu5358-usb-boot"
+ln -sf ../init.d/mu5358-usb-boot "$R/etc/rc.d/S12mu5358-usb-boot"
+# adb: on, keys only (the maintainer's call of 2026-11-01; mu300 #150): a computer gets in with a key authorised by
+# "mu5358-usb adb key FILE" (its ~/.android/adbkey.pub), every other one sees "unauthorized"
+mkdir -p "$R/etc/mu5358" && echo on > "$R/etc/mu5358/adb" && echo keys > "$R/etc/mu5358/adb_auth"
+[ -e "$R/etc/mu5358/adb_keys" ] || : > "$R/etc/mu5358/adb_keys"
+chmod 600 "$R/etc/mu5358/adb_keys"
+ln -sf ../init.d/mu5358-adbd "$R/etc/rc.d/S19mu5358-adbd"
+# mu5358-adbd on this board: its role switch (left alone in host mode), adb as f4 (f3 is the USB disk), and FunctionFS
+# recognised through the kernel's config - the GKI ships no modules.builtin and functionfs is not in /proc/filesystems
+# before the first function exists
+f="$R/opt/mu5358/bin/mu5358-adbd"
+if [ -f "$f" ] && ! grep -q '64a00000.usb-role-switch' "$f"; then
+    grep -q '^ROLE=\${MU5358_USB_ROLE:-/sys/class/usb_role/25100000.dwc3-role-switch/role}$' "$f" || { echo "$f: no ROLE line to patch" >&2; exit 1; }
+    sed -i 's|^ROLE=\${MU5358_USB_ROLE:-/sys/class/usb_role/25100000.dwc3-role-switch/role}$|ROLE=${MU5358_USB_ROLE:-/sys/class/usb_role/64a00000.usb-role-switch/role}   # mu5358 (customize.sh)|' "$f"
+    grep -q '^L=\$G/configs/c.1/f3$' "$f" || { echo "$f: no L= line to patch" >&2; exit 1; }
+    sed -i 's|^L=\$G/configs/c.1/f3$|L=$G/configs/c.1/f4   # mu5358: f3 is the USB disk (customize.sh)|' "$f"
+    grep -q '^    grep -qw functionfs "\$FILESYSTEMS" 2>/dev/null || grep -qs ' "$f" || { echo "$f: no functionfs line to patch" >&2; exit 1; }
+    sed -i 's|^    grep -qw functionfs "\$FILESYSTEMS" 2>/dev/null \|\| grep -qs |    grep -qw functionfs "$FILESYSTEMS" 2>/dev/null \|\| zcat /proc/config.gz 2>/dev/null \| grep -q "^CONFIG_USB_CONFIGFS_F_FS=y" \|\| grep -qs |' "$f"
+    grep -q 'CONFIG_USB_CONFIGFS_F_FS=y' "$f" || { echo "$f: the functionfs line was not patched" >&2; exit 1; }
+fi
+f="$R/usr/libexec/unisoc-modem/device-usb"
+if [ -f "$f" ] && ! grep -q '64a00000.usb-role-switch' "$f"; then
+    grep -q '^ROLE_FILE=\${MU5358_USB_ROLE_FILE:-/sys/class/usb_role/25100000.dwc3-role-switch/role}$' "$f" || { echo "$f: no ROLE_FILE line to patch" >&2; exit 1; }
+    sed -i 's|^ROLE_FILE=\${MU5358_USB_ROLE_FILE:-/sys/class/usb_role/25100000.dwc3-role-switch/role}$|ROLE_FILE=${MU5358_USB_ROLE_FILE:-/sys/class/usb_role/64a00000.usb-role-switch/role}   # mu5358 (customize.sh)|' "$f"
+fi
 # thermal-guard (mu300's: caps the CPU when the kernel throttles, powers off at the critical temperature, a backstop
 # over the vendor zones), from its own service here (mu300 ran it from mu300-post, which is not here)
 # This board has 34 thermal zones, and some are not sensors: frame-thmzone read 86 C on a cool board and the guard

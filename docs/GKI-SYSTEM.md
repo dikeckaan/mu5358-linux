@@ -31,7 +31,7 @@ mu300-post is not used: it makes the running slot the default boot (`mu300-next-
 
 | | |
 |---|---|
-| eMMC, USB (NCM + ACM) | yes |
+| eMMC, USB (NCM/ECM/RNDIS + ACM, a flash drive on demand, adb with keys) | yes (the flash drive and adb: 2026-11-01, `openwrt/usb`; see the USB findings below) |
 | Modem, mobile data | yes: Turk Telekom LTE; 14-19 Mbit/s at this place, Android 11-12 on the same spot |
 | Wi-Fi | AIC8800D80X2: hotspot 5 GHz channel 36, HE80 (Wi-Fi 6), WPA2; the board's MAC and calibration |
 | Screen | u30ui2: status bar + home (live graph), network, Wi-Fi, clients, traffic, SMS, battery, system, settings, power, log in three languages; 6 MB RAM, 0.5 % CPU screen on, 0.1 % off (u30ui, the papatya, kept as the classic interface) (no fbcon in GKI: DRM dumb buffers, PAGE_FLIP; the panel is mounted upside down and turns the picture itself, MADCTL through `tools/spispeed/panelcmd`: turned by the CPU it tore) |
@@ -52,6 +52,14 @@ mu300-post is not used: it makes the running slot the default boot (`mu300-next-
 - **Power off with USB connected starts the board again** (LK: "Reboot into normal"; the fuel gauge counts the time it
   was off): the PMIC powers up on VBUS. Without a cable it stays off. Either way the next boot is Android.
 - The vendor musb keeps reporting `configured` after the host is gone: mu5358-usb looks at the NCM carrier too.
+- **The role switch takes no userspace writes:** `/sys/class/usb_role/64a00000.usb-role-switch` has no `role`
+  attribute (the vendor driver registers it without `allow_userspace_control`), so host mode cannot be asked of it.
+  `mu5358-usb host` asks the Type-C port controller instead (`/sys/class/typec/port0/data_role`, a USB-PD data role
+  swap, which needs a partner that speaks PD) and undoes itself after 60 s unless `/run/mu5358/usb-host-keep` exists.
+  Untested until the OTG bench test (an adapter and a USB stick in place of the Mac's cable, the board on its hotspot).
+- **The USB composite is composed from the state files by `boot/init`** before switch_root (`/etc/mu5358/usb-net`,
+  `/etc/mu5358/usb-storage`): a mode never costs a rebind at boot. The flash drive and adb rebind the gadget once when
+  they are toggled while plugged in (the computer sees a replug); `mu5358-usb boot` never rebinds.
 - Load average ~16 while idle: vendor kernel threads in D state (as on mu300, FINDINGS 31e).
 - **Charging stays at 500 mA without Android** (2026-11-01). Two bq2560x chargers (master i2c 6-006b, slave 4-006b,
   vendor `sqc_bq2560x`/`sqc_charger` under `sprd_charger_manager`). In Android ZTE's userspace policy
