@@ -4317,5 +4317,24 @@ msgstr "发布源未更改"
 msgid "Linux runs as a one-time trial on this device: every restart or power-off returns to Android, and nothing here can change that. The next trial is started from Android again."
 msgstr "Linux 在此设备上以一次性试用方式运行：每次重启或关机都会回到 Android，这里无法更改。下一次试用需再次从 Android 启动。"
 
-msgid "USB on this device is the network link to the computer (NCM, device mode only): there is no host mode and no other protocol to choose."
-msgstr "此设备的 USB 是连接电脑的网络链路（仅 NCM，设备模式）：没有主机模式，也没有其他协议可选。"
+
+msgid "USB flash drive"
+msgstr "USB 闪存盘"
+
+msgid "Exported to the computer"
+msgstr "已导出到电脑"
+
+msgid "Size of a new disk (MiB)"
+msgstr "新磁盘的大小（MiB）"
+
+msgid "Resize (while off)"
+msgstr "调整大小（关闭时）"
+
+msgid "While the drive is on, the computer sees this device as a removable disk as well as the network link; turning it on or off replugs the USB link for a moment. The device itself does not touch the disk while it is exported."
+msgstr "打开后，电脑除网络链路外还会把此设备识别为可移动磁盘；打开或关闭会让 USB 链路短暂重新插拔。磁盘导出期间设备本身不会读写它。"
+
+msgid "The USB adapter gave no valid reply"
+msgstr "USB 适配器没有给出有效回复"
+
+msgid "The size must be at least 64 MiB"
+msgstr "大小至少为 64 MiB"

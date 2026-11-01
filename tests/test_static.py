@@ -490,6 +490,38 @@ class Charge(unittest.TestCase):
         self.assertIn('etc/mu5358/charge-limit', (TOP / 'installer/mu5358-install.sh').read_text(encoding='utf-8'))
 
 
+class Usb(unittest.TestCase):
+    """The USB flash drive and adb (openwrt/usb): the panel's card translated, device.js keeps its network-mode card,
+    the pieces in the image, adb on with keys, the state carried, the screen's row."""
+    JS = TOP / 'openwrt/usb/usb-storage.js'
+    PO = [TOP / 'openwrt/panel/po/tr/mu5358.po', TOP / 'openwrt/panel/po/zh_Hans/mu5358.po']
+
+    @staticmethod
+    def po_pairs(path):
+        text = path.read_text(encoding='utf-8')
+        return {m.group(1): m.group(2) for m in re.finditer(r'(?m)^msgid "((?:[^"\\]|\\.)*)"\nmsgstr "((?:[^"\\]|\\.)*)"', text)}
+
+    def test_card_strings_are_translated(self):
+        js = self.JS.read_text(encoding='utf-8')
+        strings = re.findall(r"_\('((?:[^'\\]|\\.)*)'\)", js)
+        self.assertGreater(len(strings), 6)
+        for po in self.PO:
+            pairs = self.po_pairs(po)
+            for s_ in strings:
+                with self.subTest(po=po.parent.name, s=s_[:40]):
+                    self.assertTrue(pairs.get(s_), f'{s_!r} has no translation in {rel(po)}')
+            self.assertNotIn('USB on this device is the network link to the computer', pairs, 'the old note stays in the po')
+
+    def test_device_js_patch_keeps_the_net_card(self):
+        c = CUSTOMIZE.read_text(encoding='utf-8')
+        i = c.index('view/mu5358/device.js')
+        block = c[i:i + 2500]
+        self.assertIn('mu5358.usb-storage', block)
+        self.assertNotIn('"mud-device-grid").style.display = "none"', block)
+        self.assertIn('mud-device-grid > section', block)
+        self.assertIn('mud-usb-adapters-card', block)
+
+
 class ScreenRadioLabel(unittest.TestCase):
     """+COPS AcT 13 is E-UTRAN-NR dual connectivity (5G NSA, what this network gives): the dashboard labels it 5G as
     Android does, not LTE (2026-11-01: 'Android says 5G, Linux said 4G')."""

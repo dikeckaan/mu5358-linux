@@ -4331,5 +4331,24 @@ msgstr "Sürüm kaynağı değiştirilmedi"
 msgid "Linux runs as a one-time trial on this device: every restart or power-off returns to Android, and nothing here can change that. The next trial is started from Android again."
 msgstr "Linux bu cihazda tek seferlik bir deneme olarak çalışır: her yeniden başlatma veya kapatma Android'e döner ve buradan hiçbir şey bunu değiştiremez. Bir sonraki deneme yine Android'den başlatılır."
 
-msgid "USB on this device is the network link to the computer (NCM, device mode only): there is no host mode and no other protocol to choose."
-msgstr "Bu cihazda USB, bilgisayara giden ağ bağlantısıdır (yalnızca NCM, cihaz modu): ana makine modu ve seçilecek başka bir protokol yoktur."
+
+msgid "USB flash drive"
+msgstr "USB bellek"
+
+msgid "Exported to the computer"
+msgstr "Bilgisayara sunuluyor"
+
+msgid "Size of a new disk (MiB)"
+msgstr "Yeni diskin boyutu (MiB)"
+
+msgid "Resize (while off)"
+msgstr "Yeniden boyutlandır (kapalıyken)"
+
+msgid "While the drive is on, the computer sees this device as a removable disk as well as the network link; turning it on or off replugs the USB link for a moment. The device itself does not touch the disk while it is exported."
+msgstr "Bellek açıkken bilgisayar bu cihazı ağ bağlantısının yanında çıkarılabilir bir disk olarak da görür; açıp kapatmak USB bağlantısını bir anlığına yeniden takar. Cihazın kendisi disk sunulurken ona dokunmaz."
+
+msgid "The USB adapter gave no valid reply"
+msgstr "USB adaptörü geçerli bir yanıt vermedi"
+
+msgid "The size must be at least 64 MiB"
+msgstr "Boyut en az 64 MiB olmalı"

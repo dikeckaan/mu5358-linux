@@ -563,14 +563,14 @@ if [ -f "$f" ] && ! grep -q 'mu5358: no CPU voltage' "$f"; then
     grep -q ', L.resolveDefault(M.callCpuVoltageGet(), {}) \]);$' "$f" || { echo "$f: no callCpuVoltageGet line to patch" >&2; exit 1; }
     sed -i 's@, L.resolveDefault(M.callCpuVoltageGet(), {}) \]);$@ ]);@' "$f"
 fi
-# Cellular > Device management: the USB role (host mode: the F50's dwc3 role switch), the USB network protocol for
-# the next boot (mu300's boot/init reads /etc/mu5358/usb-net; this board's does not) and the USB adapters (host mode
-# only) are not this board's, whose MUSB is a gadget in peripheral mode only: those cards are hidden, a note in their
-# place (the string in openwrt/panel/po). The TCP congestion control and the operations log are generic and stay.
+# Cellular > Device management: the USB role card (host mode) is hidden - this kernel's role switch takes no
+# userspace writes and the Type-C data-role swap is untested (mu5358-usb host, docs/GKI-SYSTEM.md) - and so are the
+# USB adapters (host mode only). The network-mode card stays: boot/init reads /etc/mu5358/usb-net since the W5 work
+# (2026-11-01). The "USB flash drive" card (openwrt/usb/usb-storage.js, rpcd mu5358usb) goes in before the grid.
 f="$R/www/luci-static/resources/view/mu5358/device.js"
-if [ -f "$f" ] && ! grep -q 'mu5358: USB' "$f"; then
+if [ -f "$f" ] && ! grep -q 'mu5358: USB disk' "$f"; then
     grep -q '^[[:space:]]*this.root = root;$' "$f" || { echo "$f: no this.root line to patch" >&2; exit 1; }
-    sed -i 's@^\([[:space:]]*\)this.root = root;$@&\n\1/* mu5358: USB is the MUSB gadget in peripheral mode only, and boot/init reads no protocol choice: the role, the network mode and the adapter cards are hidden, a note in their place (customize.sh) */\n\1root.querySelector(".mud-device-grid").style.display = "none";\n\1root.querySelector("#mud-usb-adapters-card").style.display = "none";\n\1root.insertBefore(E("section", { "class": "mud-card" }, [ E("h3", {}, "USB"), E("div", { "class": "mud-note" }, [ _("USB on this device is the network link to the computer (NCM, device mode only): there is no host mode and no other protocol to choose.") ]) ]), root.querySelector(".mud-device-grid"));@' "$f"
+    sed -i 's@^\([[:space:]]*\)this.root = root;$@&\n\1/* mu5358: USB disk card in, the role and adapter cards out (customize.sh) */\n\1root.querySelector(".mud-device-grid > section").style.display = "none";\n\1root.querySelector("#mud-usb-adapters-card").style.display = "none";\n\1L.require("mu5358.usb-storage").then(function(m) { m.render(root, root.querySelector(".mud-device-grid")); });@' "$f"
 fi
 # The hotspot watched (openwrt/wifiwatch, after mu300's wifiretry): three misses of hostapd or wlan0 in a row bring
 # the radio back with wifi up, at most once in 10 minutes

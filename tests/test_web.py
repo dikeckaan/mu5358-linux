@@ -41,7 +41,7 @@ class JavaScript(unittest.TestCase):
         self.assertRegex(r.stdout, r'(?m)^(ℹ|#) pass [1-9]\d*$')
 
     def test_every_module_parses(self):
-        files = sorted(WI.rglob('*.js'))
+        files = sorted(WI.rglob('*.js')) + [TOP / 'openwrt/usb/usb-storage.js']
         self.assertGreater(len(files), 8)
         for f in files:
             r = subprocess.run([NODE, '--check', str(f)], capture_output=True, text=True, timeout=60)
