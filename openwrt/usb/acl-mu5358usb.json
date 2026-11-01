@@ -1,0 +1,15 @@
+{
+	"luci-app-mu5358": {
+		"description": "USB flash drive and adb (mu5358usb)",
+		"read": {
+			"ubus": {
+				"mu5358usb": [ "get" ]
+			}
+		},
+		"write": {
+			"ubus": {
+				"mu5358usb": [ "set" ]
+			}
+		}
+	}
+}

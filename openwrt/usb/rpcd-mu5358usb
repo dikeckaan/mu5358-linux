@@ -1,0 +1,64 @@
+#!/bin/sh
+# rpcd object "mu5358usb" (/usr/libexec/rpcd/mu5358usb): the control panel's handle on the USB flash drive and adb,
+# through /opt/mu5358/bin/mu5358-usb (openwrt/usb/mu5358-usb). ACL: openwrt/usb/acl-mu5358usb.json.
+#   get                      {"ok":1,"storage":"on|off","size_mib":N,"exported":0|1,"image":0|1,"free_mib":N,
+#                             "adb":"off|open|keys|unavailable","role":"device|host|unavailable"}
+#   set {"kind":K,"value":V}  K storage (on|off), storage_size (64..999999 MiB), adb (on|off)
+#                             → {"ok":1,"message":"..."} or {"ok":0,"error":"..."}
+# The arguments are read with sed (rpcd hands one compact JSON object), then checked against allow-lists: nothing from
+# the request reaches a command line unchecked. (tests/test_usb.py Rpcd.)
+set -u
+export PATH="$PATH:/opt/mu5358/bin:/usr/sbin:/sbin"
+USB=${MU5358_USB_BIN:-/opt/mu5358/bin/mu5358-usb}
+
+json_str() { printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\n\r')"; }
+reply_err() { printf '{"ok":0,"error":%s}\n' "$(json_str "$1")"; exit 0; }
+field() {  # field NAME: the string value of NAME in the request (letters, digits, _ - . and spaces only)
+    printf '%s' "$REQ" | tr -d '\n\r' | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([A-Za-z0-9_. -]*\)\".*/\1/p" | head -n 1
+}
+num() { case $1 in ''|*[!0-9]*) echo 0 ;; *) echo "$1" ;; esac; }
+
+case ${1:-} in
+    list)
+        echo '{"get":{},"set":{"kind":"str","value":"str"}}' ;;
+    call)
+        case ${2:-} in
+            get)
+                out=$("$USB" status 2>/dev/null) || out=
+                st=$(printf '%s\n' "$out" | sed -n 's/^storage: //p' | head -n 1)
+                size=$(num "$(printf '%s\n' "$out" | sed -n 's/^size: \([0-9]*\) MiB$/\1/p' | head -n 1)")
+                exported=0; [ "$(printf '%s\n' "$out" | sed -n 's/^exported: //p' | head -n 1)" != yes ] || exported=1
+                image=0; case $(printf '%s\n' "$out" | sed -n 's/^image: //p' | head -n 1) in *"(present)") image=1 ;; esac
+                free=$(num "$(printf '%s\n' "$out" | sed -n 's/^free: \([0-9]*\) MiB$/\1/p' | head -n 1)")
+                adb=$(printf '%s\n' "$out" | sed -n 's/^adb: //p' | head -n 1)
+                auth=$(printf '%s\n' "$out" | sed -n 's/^auth: \([a-z]*\).*/\1/p' | head -n 1)
+                case $adb in
+                    off) adb=off ;;
+                    on) case $auth in keys|open) adb=$auth ;; *) adb=unavailable ;; esac ;;
+                    *) adb=unavailable ;;
+                esac
+                role=$(printf '%s\n' "$out" | sed -n 's/^role: //p' | head -n 1)
+                case $role in host|device) ;; *) role=unavailable ;; esac
+                case $st in on|off) ;; *) st=off ;; esac
+                printf '{"ok":1,"storage":"%s","size_mib":%s,"exported":%s,"image":%s,"free_mib":%s,"adb":"%s","role":"%s"}\n' \
+                    "$st" "$size" "$exported" "$image" "$free" "$adb" "$role" ;;
+            set)
+                REQ=$(cat)
+                kind=$(field kind); value=$(field value)
+                case $kind in
+                    storage) case $value in on|off) set -- storage "$value" ;; *) reply_err "The value must be on or off" ;; esac ;;
+                    storage_size) case $value in [0-9][0-9]|[0-9][0-9][0-9]|[0-9][0-9][0-9][0-9]|[0-9][0-9][0-9][0-9][0-9]|[0-9][0-9][0-9][0-9][0-9][0-9]) set -- storage size "$value" ;;
+                                                  *) reply_err "The size must be a number of MiB" ;; esac ;;
+                    adb) case $value in on|off) set -- adb "$value" ;; *) reply_err "The value must be on or off" ;; esac ;;
+                    *) reply_err "Unknown USB setting" ;;
+                esac
+                if out=$("$USB" "$@" 2>&1); then
+                    printf '{"ok":1,"message":%s}\n' "$(json_str "$(printf '%s\n' "$out" | head -n 1)")"
+                else
+                    reply_err "$(printf '%s\n' "$out" | sed 's/^mu5358-usb: //' | tail -n 1)"
+                fi ;;
+            *) reply_err "Unknown method" ;;
+        esac ;;
+    *) echo "usage: $0 list | call get|set" >&2; exit 1 ;;
+esac
+exit 0

@@ -5,6 +5,7 @@ umount that record their arguments. Runs under the host's sh (macOS: bash as sh;
 
 Every path the script touches has an environment override (its header lists them), so nothing here reaches the
 machine's own /sys or /etc."""
+import json
 import os
 import shutil
 import stat
@@ -19,6 +20,8 @@ from helpers import TOP
 
 USB = TOP / 'openwrt/usb/mu5358-usb'
 INIT = TOP / 'boot/init'
+RPCD = TOP / 'openwrt/usb/rpcd-mu5358usb'
+ACL = TOP / 'openwrt/usb/acl-mu5358usb.json'
 UDC = 'musb-hdrc.1.auto'
 RECORDER = '''#!/bin/sh
 # records its name and arguments, one call a line, NUL between the arguments; prints a canned reply when one is set
@@ -435,6 +438,63 @@ class Host(Base):
         self.assertEqual(r.returncode, 1)
         self.assertIn('no USB-C port controller', r.stderr)
         self.assertEqual(self.role(), '[device] host')
+
+
+class Rpcd(Base):
+    """The rpcd object mu5358usb (list, call get, call set) over a recorded stand-in for mu5358-usb."""
+    STATUS = ('storage: on\nsize: 2048 MiB\nexported: yes\nimage: /data/usb-disk.img (present)\nfree: 1234 MiB\n'
+              'USB network from the next boot: ncm (the default)\nthis boot: ncm\nadb: on\nauth: keys\nrole: device\n')
+
+    def setUp(self):
+        super().setUp()
+        self.tool = self.stub('mu5358-usb')
+        self.env.update(MU5358_USB_BIN=str(self.tool), STUB_REPLY=self.STATUS)
+
+    def rpc(self, *args, stdin=None):
+        r = subprocess.run(['sh', str(RPCD), *args], env=self.env, capture_output=True, text=True, input=stdin, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def test_list(self):
+        self.assertEqual(self.rpc('list'), {'get': {}, 'set': {'kind': 'str', 'value': 'str'}})
+
+    def test_get(self):
+        self.assertEqual(self.rpc('call', 'get'), {'ok': 1, 'storage': 'on', 'size_mib': 2048, 'exported': 1, 'image': 1,
+                                                   'free_mib': 1234, 'adb': 'keys', 'role': 'device'})
+        self.assertEqual(self.calls(), [['mu5358-usb', 'status']])
+
+    def test_set_storage_runs_the_tool(self):
+        out = self.rpc('call', 'set', stdin='{"kind":"storage","value":"on"}')
+        self.assertEqual(out['ok'], 1)
+        self.assertEqual(self.calls(), [['mu5358-usb', 'storage', 'on']])
+        self.assertIn('message', out)
+
+    def test_set_size(self):
+        self.rpc('call', 'set', stdin='{ "kind": "storage_size", "value": "512" }')
+        self.assertEqual(self.calls(), [['mu5358-usb', 'storage', 'size', '512']])
+        self.log.unlink()
+        self.rpc('call', 'set', stdin='{"kind":"adb","value":"off"}')
+        self.assertEqual(self.calls(), [['mu5358-usb', 'adb', 'off']])
+
+    def test_refuses_what_is_not_allowed(self):
+        for body in ('{"kind":"storage","value":"on; reboot"}', '{"kind":"reboot","value":"on"}',
+                     '{"kind":"storage_size","value":"-5"}', '{"kind":"storage_size","value":"1e3"}', '{"value":"on"}', 'garbage'):
+            out = self.rpc('call', 'set', stdin=body)
+            self.assertEqual(out['ok'], 0, body)
+            self.assertIn('error', out)
+        self.assertEqual(self.calls(), [])
+
+    def test_a_refusal_of_the_tool_is_an_error(self):
+        out = self.rpc('call', 'set', stdin='{"kind":"storage","value":"on"}')
+        self.assertEqual(out['ok'], 1)
+        self.env.update(STUB_RC='1', STUB_REPLY='')
+        out = self.rpc('call', 'set', stdin='{"kind":"storage","value":"on"}')
+        self.assertEqual(out['ok'], 0)
+
+    def test_acl_names_the_methods(self):
+        acl = json.loads(ACL.read_text())
+        self.assertEqual(acl['luci-app-mu5358']['read']['ubus']['mu5358usb'], ['get'])
+        self.assertEqual(acl['luci-app-mu5358']['write']['ubus']['mu5358usb'], ['set'])
 
 
 if __name__ == '__main__':
