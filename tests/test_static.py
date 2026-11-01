@@ -434,6 +434,7 @@ class Telegram(unittest.TestCase):
         self.assertIn('curl -sS -K', t)
         self.assertNotRegex(t, r'curl[^\n]*TELEGRAM_BOT_TOKEN')
         self.assertNotRegex(t, r'api\.telegram\.org/bot\$')
+        self.assertNotRegex(t, r'--arg[^\n]*TELEGRAM_CHAT_ID', 'the chat id goes to jq through the environment, not argv')
 
     def test_dry_run_message(self):
         if not shutil.which('jq'):

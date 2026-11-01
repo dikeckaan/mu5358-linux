@@ -147,9 +147,11 @@ static void decide(const struct inputs *in, const struct decision *prev, struct 
 	/* the source */
 	if (in->usb_online != 1 && in->tcpm_online != 1)
 		set(out, MIN_MA, 1, "none", "source");
-	else if (in->tcpm_online == 1 &&
-		 (!strcmp(in->tcpm_type, "PD") || !strcmp(in->tcpm_type, "PD_PPS") ||
-		  (!strcmp(in->tcpm_type, "C") && in->tcpm_current_ua >= 1500000)))
+	else if (in->tcpm_online == 1 && (!strcmp(in->tcpm_type, "PD") || !strcmp(in->tcpm_type, "PD_PPS"))) {
+		/* a PD contract as negotiated (current_max is the contract's current): a 5 V/1 A adapter gives 1 A */
+		int ma = in->tcpm_current_ua >= 0 ? in->tcpm_current_ua / 1000 : MIN_MA;
+		set(out, ma > CAP_MA ? CAP_MA : ma < MIN_MA ? MIN_MA : ma, 1, "typec", "source");
+	} else if (in->tcpm_online == 1 && !strcmp(in->tcpm_type, "C") && in->tcpm_current_ua >= 1500000)
 		set(out, CAP_MA, 1, "typec", "source");
 	else if (in->ac_online == 1 && !strcmp(in->ac_type, "USB_DCP"))
 		set(out, CAP_MA, 1, "dcp", "source");
@@ -158,19 +160,16 @@ static void decide(const struct inputs *in, const struct decision *prev, struct 
 	else
 		set(out, MIN_MA, 1, "sdp", "source");
 	/* the temperature guard */
-	if (in->temp == -1) {
-		set(out, MIN_MA, 1, NULL, "notemp");
-		return;
-	}
-	if (in->temp >= HOT) {
+	if (in->temp == -1)
+		set(out, MIN_MA, 1, NULL, "notemp");	/* unknown: 500 mA, charging on; the limit below still holds */
+	else if (in->temp >= HOT) {
 		set(out, MIN_MA, 0, NULL, "hot");
 		return;
 	}
-	if (in->temp <= COLD) {
+	else if (in->temp <= COLD) {
 		set(out, MIN_MA, 0, NULL, "cold");
 		return;
-	}
-	if (prev_off && !strcmp(prev->reason, "hot") && in->temp > HOT_RESUME) {
+	} else if (prev_off && !strcmp(prev->reason, "hot") && in->temp > HOT_RESUME) {
 		set(out, MIN_MA, 0, NULL, "hot");
 		return;
 	}
@@ -453,6 +452,15 @@ static void state_write(const char *line)
 	char path[512], tmp[520];
 	FILE *f;
 	state_path(path, sizeof path);
+	{
+		char dir[512], *q;	/* mkdir -p of the directory: /run/mu5358 is nobody else's to make */
+		snprintf(dir, sizeof dir, "%s", path);
+		for (q = dir + 1; (q = strchr(q, '/')); q++) {
+			*q = 0;
+			mkdir(dir, 0755);
+			*q = '/';
+		}
+	}
 	snprintf(tmp, sizeof tmp, "%s.new", path);
 	f = fopen(tmp, "w");
 	if (!f)
@@ -485,6 +493,7 @@ static int round_once(struct chip *c, struct decision *prev, int have_prev, int 
 	struct applied a;
 	read_inputs(&in);
 	decide(&in, have_prev ? prev : NULL, &d);
+	*prev = d;	/* the decision stands as the previous one whether or not the chip took it */
 	if (apply(c, &d, &a) < 0) {
 		snprintf(line, n, "source=%s input_ma=%d charge=%s reason=i2c-error temp=%d capacity=%d error=%s", d.source,
 			 d.input_ma, d.charge ? "on" : "off", in.temp, in.capacity, strerror(errno));
@@ -493,7 +502,6 @@ static int round_once(struct chip *c, struct decision *prev, int have_prev, int 
 	if (a.rewritten == 1)
 		(*rewrites)++;
 	state_line(line, n, &in, &d, &a, *rewrites);
-	*prev = d;
 	return a.rewritten < 0 ? 3 : 0;
 }
 
@@ -560,6 +568,9 @@ int main(int argc, char **argv)
 	int have_prev, rewrites = 0, rc;
 	char line[512];
 	struct chip c;
+	memset(&prev, 0, sizeof prev);	/* defined even when the first round fails before a decision is kept */
+	prev.charge = 1;
+	snprintf(prev.reason, sizeof prev.reason, "source");
 	if (!strcmp(cmd, "decide")) {
 		struct inputs in;
 		struct decision d;

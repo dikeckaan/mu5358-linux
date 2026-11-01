@@ -56,8 +56,9 @@ text="$text
 # the token stays out of the command line and the log: curl reads the URL from a config file
 cfg=$(umask 077; mktemp "${TMPDIR:-/tmp}/mu5358-tg.XXXXXX"); trap 'rm -f "$cfg"' EXIT
 printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TELEGRAM_BOT_TOKEN" > "$cfg"
-out=$(jq -n --arg c "$TELEGRAM_CHAT_ID" --arg t "$text" \
-        '{chat_id: $c, text: $t, parse_mode: "HTML", disable_web_page_preview: true}' |
+export TELEGRAM_CHAT_ID
+out=$(jq -n --arg t "$text" \
+        '{chat_id: env.TELEGRAM_CHAT_ID, text: $t, parse_mode: "HTML", disable_web_page_preview: true}' |
       curl -sS -K "$cfg" -H 'Content-Type: application/json' --data-binary @-)
 printf '%s' "$out" | jq -e .ok >/dev/null || { echo "telegram: $(printf '%s' "$out" | jq -r '.description // "no answer"')" >&2; exit 1; }
 echo "telegram: sent ($MODE $TAG $ACTION)"

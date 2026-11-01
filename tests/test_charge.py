@@ -105,6 +105,22 @@ class Decide(Base):
         self.assertEqual(self.decide(mac_tree(**{f'{PSY}/battery/temp': '-5'})),
                          'source=typec input_ma=500 charge=off reason=cold')
 
+    def test_pd_contract_below_1500(self):
+        """A PD contract is honoured as negotiated: 5 V/1 A gives 1000 mA, never the cap (a small adapter would collapse)."""
+        t = mac_tree(**{f'{TCPM}/current_max': '1000000', f'{TCPM}/usb_type': 'C [PD] PD_PPS'})
+        self.assertEqual(self.decide(t), 'source=typec input_ma=1000 charge=on reason=source')
+        t = mac_tree(**{f'{TCPM}/current_max': '3000000', f'{TCPM}/usb_type': 'C [PD] PD_PPS'})
+        self.assertEqual(self.decide(t), 'source=typec input_ma=1500 charge=on reason=source')
+        t = mac_tree(**{f'{TCPM}/current_max': '300000', f'{TCPM}/usb_type': 'C [PD] PD_PPS'})
+        self.assertEqual(self.decide(t), 'source=typec input_ma=500 charge=on reason=source')
+
+    def test_limit_holds_without_a_temperature(self):
+        lim = 'etc/mu5358/charge-limit'
+        self.assertEqual(self.decide(mac_tree(**{f'{PSY}/battery/temp': 'abc', lim: '80', f'{PSY}/battery/capacity': '80'})),
+                         'source=typec input_ma=500 charge=off reason=limit')
+        self.assertEqual(self.decide(mac_tree(**{f'{PSY}/battery/temp': 'abc', lim: '80', f'{PSY}/battery/capacity': '50'})),
+                         'source=typec input_ma=500 charge=on reason=notemp')
+
     def test_garbage_temp(self):
         self.assertEqual(self.decide(mac_tree(**{f'{PSY}/battery/temp': 'abc'})),
                          'source=typec input_ma=500 charge=on reason=notemp')
@@ -182,6 +198,26 @@ class Apply(Base):
         self.assertEqual(b[0], 0x04)
         self.assertTrue(b[1] & 0x10)
         self.assertFalse(self.state.exists())
+
+    def test_state_directory_is_made(self):
+        state = self.root / 'run/mu5358/charge'
+        self.once(mac_tree(), MU5358_STATE=str(state))
+        self.assertTrue(state.is_file())
+
+    def test_loop_survives_an_apply_failure(self):
+        """No state file, the attribute unreadable from the first round: the loop keeps going (the next decision
+        must not read an unset previous one), says i2c-error, and SIGTERM still exits 0."""
+        bad = self.root / 'registers'
+        bad.write_text('nothing a charger would say\n')
+        self.tree(mac_tree())
+        e = dict(os.environ, MU5358_ROOT=str(self.root), MU5358_CHARGE_PERIOD='1', MU5358_CHARGE_REGS=str(bad),
+                 MU5358_STATE=str(self.state))
+        p = subprocess.Popen([str(BIN)], env=e, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        time.sleep(2.5)
+        self.assertIsNone(p.poll(), 'the daemon died')
+        self.assertIn('reason=i2c-error', self.state.read_text())
+        p.send_signal(signal.SIGTERM)
+        self.assertEqual(p.wait(timeout=5), 0)
 
     def test_status_prints_state(self):
         line = self.once(mac_tree())
