@@ -20,7 +20,7 @@ MU={mu}
 if tree_select {disk}; then
     echo "TREE $TREE"
     tree_mount {disk} {newroot}
-    ramdisk_publish {newroot}
+    ramdisk_publish {newroot} fulldumpdb
 else
     echo "TREE none"
 fi
@@ -115,6 +115,7 @@ class TreeSelect(unittest.TestCase):
         self.assertIn('LOG stage=tree-flat', out)
         self.assertIn('TREE .\n', out)
         self.assertIn(f'MOUNT --bind {self.disk} {self.newroot}\n', out)
+        self.assertIn(f'MOUNT --bind {self.disk} {self.newroot}/mnt/mu5358-disk\n', out, 'the updater can say "flat: update from the page" (review #8)')
         self.assertFalse((self.disk / 'boot/tries').exists())
 
     def test_nothing_to_boot(self):
@@ -138,6 +139,7 @@ class TreeSelect(unittest.TestCase):
         self.assertEqual((rd / 'misc-bc-android.bin').read_text(), 'bc')
         self.assertEqual((rd / 'modules/sprd_pmic_wdt.ko').read_text(), 'ko')
         self.assertFalse((rd / 'e2fsck').exists(), 'e2fsck is not the updater\'s')
+        self.assertEqual((self.newroot / 'run/mu5358/root-target').read_text().strip(), 'fulldumpdb', 'the updater keeps the record\'s target (review #2)')
 
 
 if __name__ == '__main__':

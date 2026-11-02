@@ -5,6 +5,7 @@
 # "off" (carried across updates) ends the loop at once; on by default (the maintainer's call, 2026-11-01).
 E=${MU5358_ETC:-/etc/mu5358}
 U=${MU5358_UPDATE:-mu5358-update}
+[ "$(head -n 1 "$E/update-check" 2>/dev/null)" != off ] || exit 0
 sleep "${MU5358_NOTICE_DELAY:-300}"
 while :; do
     [ "$(head -n 1 "$E/update-check" 2>/dev/null)" != off ] || exit 0

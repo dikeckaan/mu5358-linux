@@ -279,7 +279,7 @@ this_device() { "${MU5358_BIN:-/opt/mu5358/bin}/mu5358-device"; }
 # Android, misc is never written here, and the boot images are the installer's boot_b and init_boot_b (the boot
 # images block below). A restart after an update starts Android; Linux is started again from the page.
 reboot_goes_to_android() { return 0; }
-root_layout() { cat "${MU5358_ROOT_TARGET:-/run/mu5358/root-target}" 2>/dev/null || echo region; }
+root_layout() { cat "${MU5358_ROOT_TARGET:-/run/mu5358/root-target}" 2>/dev/null || boot_installed target || echo region; }   # where the system is: boot/init says, else the record
 root_on_sd() { return 1; }
 kernel_choice() { echo gki; }
 retire_call_audio() { return 0; }
@@ -2594,7 +2594,7 @@ newer() {
 # space_needed N [CARRY_KB]: the space an update wants free on the Linux partition, in KiB, for N systems - about
 # 1 GB, and 1 GB for each system's download and image - and CARRY_KB, what the carry block copies beside the previous
 # versions (carry_need). The one rule: apply refuses with it, and the panel shows it.
-space_needed() { echo $((1000000 + 1000000 * $1 + ${2:-0})); }
+space_needed() { echo $((450000 + ${2:-0})); }   # one tree (the 65 MB download, ~300 MB unpacked, 64 MB of boot-image work) and the carry: fulldumpdb's 2 GiB holds two trees (review #3)
 
 # /etc/mu5358/update-source: another place to take the releases from (a mirror on the LAN, a copy where GitHub cannot
 # be reached), for the command and the panel alike. Root's own regular file, lines NAME=URL with these names only;

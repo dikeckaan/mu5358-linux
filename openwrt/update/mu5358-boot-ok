@@ -8,6 +8,15 @@ V=$(head -n 1 "${MU5358_ETC:-/etc/mu5358}/version" 2>/dev/null)
 sleep "${MU5358_BOOT_OK_DELAY:-30}"
 [ -d "$D/boot" ] || exit 0
 [ -n "$V" ] || V=unknown
+# a fallback boot (boot/init took system.old after three boots of system without ok): this tree is the good one, so
+# it becomes system for good and the tree that failed is kept as system.failed (renames of a bind-mounted directory
+# are safe: the running system keeps its directory)
+if [ "${MU5358_ROOT:-/}" -ef "$D/system.old" ]; then
+    rm -rf "$D/system.failed"
+    mv "$D/system" "$D/system.failed" && mv "$D/system.old" "$D/system" && sync &&
+        logger -t mu5358-boot-ok "fallback boot made permanent: system.old is system again, the tree that failed is system.failed" ||
+        logger -t mu5358-boot-ok "could not make the fallback permanent"
+fi
 printf '%s\n' "$V" > "$D/boot/ok.new" && mv "$D/boot/ok.new" "$D/boot/ok" && echo 0 > "$D/boot/tries" && sync ||
     { logger -t mu5358-boot-ok "could not write $D/boot/ok"; exit 1; }
 logger -t mu5358-boot-ok "boot ok: $V (tries 0)"

@@ -349,15 +349,21 @@ tree_select() {  # tree_select DISK: TREE = the directory to boot (. for flat); 
     return 0
 }
 tree_mount() {  # tree_mount DISK NEWROOT: the tree as the new root, the filesystem and data/ visible inside it
-    if [ "$TREE" = . ]; then mount --bind "$1" "$2"; return; fi
+    if [ "$TREE" = . ]; then
+        # flat: the filesystem is the root; it is also at /mnt/mu5358-disk, where the updater looks (and says "flat")
+        mount --bind "$1" "$2" || return 1
+        mkdir -p "$2/mnt/mu5358-disk" && mount --bind "$1" "$2/mnt/mu5358-disk"
+        return 0
+    fi
     mount --bind "$1/$TREE" "$2" || return 1
     mkdir -p "$2/mnt/mu5358-disk" "$2/data" "$1/data"
     mount --bind "$1" "$2/mnt/mu5358-disk"
     mount --bind "$1/data" "$2/data"
 }
-ramdisk_publish() {  # ramdisk_publish NEWROOT: this ramdisk's busybox (cpio), misc block and modules, for the updater
-    _r=$1/run/mu5358/ramdisk
+ramdisk_publish() {  # ramdisk_publish NEWROOT TARGET: this ramdisk's busybox (cpio), misc block and modules, and where
+    _r=$1/run/mu5358/ramdisk                 # the system is (region|fulldumpdb: the updater's record), for the updater
     rm -rf "$_r" && mkdir -p "$_r/modules" || return 1
+    echo "$2" > "$1/run/mu5358/root-target"
     cp "$MU/busybox" "$_r/busybox" 2>/dev/null
     cp "$MU/misc-bc-android.bin" "$_r/misc-bc-android.bin" 2>/dev/null
     cp "$MU"/modules/*.ko "$_r/modules/" 2>/dev/null
@@ -376,7 +382,7 @@ if ! tree_mount /disk /newroot; then
     while :; do sleep 3600; done
 fi
 log "stage=tree-mounted tree=$TREE tries=$(cat /disk/boot/tries 2>/dev/null)"
-ramdisk_publish /newroot
+ramdisk_publish /newroot "$([ "$ROOTDEV" = /dev/mmcblk0 ] && echo region || echo fulldumpdb)"
 init=/sbin/init
 [ -x "/newroot$init" ] || init=/lib/systemd/systemd
 if [ ! -x "/newroot$init" ]; then

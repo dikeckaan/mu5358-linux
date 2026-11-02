@@ -235,6 +235,13 @@ class MigrateFlat(Busybox):
         self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
         self.assertEqual(r.stdout.split(), ['boot', 'data', 'lost+found', 'system', 'system', 'v1', 'IMG', 'system/.hidden'])
 
+    def test_an_interrupted_migration_resumes(self):
+        # review #5: a power cut mid-way left neither a flat tree nor system/; migrate carries on from system.migrate
+        r = self.sh('mkdir -p /tmp/m/system.migrate/etc /tmp/m/sbin /tmp/m/usr /tmp/m/lost+found && : > /tmp/m/sbin/init && : > /tmp/m/usr/x && '
+                    f'sh {S} _test layout /tmp/m && sh {S} _test migrate /tmp/m && cd /tmp/m && ls -A && ls system && sh {S} _test layout /tmp/m')
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        self.assertEqual(r.stdout.split(), ['migrating', 'boot', 'data', 'lost+found', 'system', 'etc', 'sbin', 'usr', 'tree'])
+
     def test_a_tree_layout_is_left_alone(self):
         r = self.sh('mkdir -p /tmp/m/system/sbin /tmp/m/data && : > /tmp/m/system/sbin/init && echo keep > /tmp/m/data/x && '
                     f'sh {S} _test migrate /tmp/m && cd /tmp/m && ls -A && cat data/x')
@@ -281,6 +288,15 @@ class MigrateFlat(Busybox):
         self.assertEqual(out.count('rc=1'), 3, out)
         self.assertNotIn('ramdisk=', out, 'a backslash in a value is refused, not read by echo')
 
+    def test_the_record_with_the_live_boot_b_wins_the_date_only_breaks_ties(self):
+        # review #7: a Linux-side apply on a device whose clock is behind wrote an older date and lost
+        live = 'a' * 64
+        new = 'version=v2\ndate=2026-01-01T00:00:00Z\nboot_b_head=' + live + '\n'
+        old = 'version=v1\ndate=2026-11-02T00:00:00Z\nboot_b_head=' + 'b' * 64 + '\n'
+        r = self.sh(f'printf \'{new}\' > /tmp/n; printf \'{old}\' > /tmp/o; sh {S} _test record_pick {live} /tmp/n /tmp/o; '
+                    f'sh {S} _test record_pick {"c" * 64} /tmp/n /tmp/o; sh {S} _test record_pick {"b" * 64} /tmp/n /tmp/o')
+        self.assertEqual(r.stdout.split(), ['new', 'old', 'old'], r.stderr)
+
     def test_the_newer_record_wins(self):
         r = self.sh(f'sh {S} _test record_newer 2026-11-02T10:00:00Z 2026-11-02T09:00:00Z; echo $?; '
                     f'sh {S} _test record_newer 2026-11-02T09:00:00Z 2026-11-02T10:00:00Z; echo $?; sh {S} _test record_newer "" 2026-11-02T10:00:00Z; echo $?')
@@ -305,6 +321,15 @@ class Take(Busybox):
         self.assertIn('rc=0', r.stdout, r.stdout + r.stderr)
         self.assertIn('MU5358-INFO mu5358-system.tar.gz ok', r.stdout)
         self.assertIn('MU5358-TAKEN v2026.11.02.1', r.stdout)
+
+    def test_check_accepts_the_tree_without_the_image(self):
+        # review 2026-11-02 #1: check demanded the image, so every "Update to ..." from the page died at step check
+        src = (TOP / 'installer/mu5358-install.sh').read_text(encoding='utf-8')
+        body = src[src.index('check() {'):]
+        body = body[:body.index('\n}\n')]
+        loop = [l for l in body.split('\n') if 'take the release first' in l][0]
+        self.assertNotIn('$F_ROOT', loop)
+        self.assertIn('[ -s "$IN/$F_ROOT" ] || [ -s "$IN/$F_SYSTEM" ] || die "take the release first"', body)
 
     def test_the_image_alone_is_enough_for_an_install(self):
         r = self.pushed({'mu5358-kernel.Image.gz': 'K', 'mu5358-ramdisk.tar.gz': 'R', 'mu5358-openwrt.img.gz': 'I'})

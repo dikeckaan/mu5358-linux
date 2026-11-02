@@ -313,7 +313,8 @@ check() {
     done
     _bc=$(bc_live)
     [ "$(bc_state "$_bc")" = android ] || die "misc is not Android's on slot a ($(bc_state "$_bc"))"
-    for _f in $F_KERNEL $F_RAMDISK $F_ROOT gpt-userdata f2fs-shrink; do [ -s "$IN/$_f" ] || die "take the release first"; done
+    for _f in $F_KERNEL $F_RAMDISK gpt-userdata f2fs-shrink; do [ -s "$IN/$_f" ] || die "take the release first"; done
+    [ -s "$IN/$F_ROOT" ] || [ -s "$IN/$F_SYSTEM" ] || die "take the release first"
     region_info || die "cannot read the GPT (userdata must be its last partition)"
     if [ "$TARGET" = fulldumpdb ]; then
         case $(fd_state) in empty|ours) ;; *) die "fulldumpdb is in use (not zeros, not a MU5358 Linux)" ;; esac
@@ -408,14 +409,18 @@ chain() {
 # for the rollback, data/ bind-mounted at /data (the flash-drive image, prev.* boot images), boot/tree naming the tree
 # to boot. An installation from before 2026-11-02 is flat: the tree at the top. tree_dir MNT: where the tree is.
 tree_dir() { if [ -e "$1/system/sbin/init" ]; then echo "$1/system"; else echo "$1"; fi; }
-layout() { if [ -e "$1/system/sbin/init" ]; then echo tree; elif [ -e "$1/sbin/init" ]; then echo flat; else echo none; fi; }
+layout() {
+    if [ -e "$1/system/sbin/init" ]; then echo tree
+    elif [ -d "$1/system.migrate" ]; then echo migrating   # a migration cut short: migrate carries on
+    elif [ -e "$1/sbin/init" ]; then echo flat; else echo none; fi
+}
 LAYOUT=
 # migrate MNT: a flat installation into the layout - everything but lost+found renamed into system/ (the tree keeps
 # booting if this is cut short: boot/init takes a flat filesystem and a system/ alike), the flash-drive image into
 # data/, boot/tree. Nothing is copied: renames within one filesystem. A tree layout is left as it is.
 migrate() {
     _m=$1
-    [ "$(layout $_m)" = flat ] || return 0
+    case $(layout $_m) in flat|migrating) ;; *) return 0 ;; esac
     for _e in system.migrate system data boot; do [ ! -L $_m/$_e ] || return 1; done
     mkdir -p $_m/system.migrate || return 1
     for _e in $_m/* $_m/.[!.]*; do
@@ -433,6 +438,15 @@ migrate() {
 # boot/installed in the filesystem, which the Linux-side updater (mu5358-update) writes too. The newer wins
 # (record_sync, before status and boot-linux); every installation and update here puts its own in (record_put).
 record_newer() { [ -n "$1" ] && [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort | tail -n 1)" = "$1" ]; }
+# record_pick LIVE_HEAD NEW OLD: "new" or "old" - the record whose boot_b_head is the live boot_b's first MiB (a clock
+# that was behind wrote an older date on the Linux side); the date only breaks a tie
+record_pick() {
+    _nh=$(sed -n 's/^boot_b_head=//p' "$2" | head -n 1); _oh=$(sed -n 's/^boot_b_head=//p' "$3" | head -n 1)
+    if [ "$_nh" = "$1" ] && [ "$_oh" != "$1" ]; then echo new
+    elif [ "$_oh" = "$1" ] && [ "$_nh" != "$1" ]; then echo old
+    elif record_newer "$(sed -n 's/^date=//p' "$2" | head -n 1)" "$(sed -n 's/^date=//p' "$3" | head -n 1)"; then echo new
+    else echo old; fi
+}
 fs_mount() {  # fs_mount ro|rw [DIR]: the installed filesystem at DIR ($MNT; FS_LO: the loop device over the region)
     FS_LO= FS_MNT=${2:-$MNT}
     case $(installed target) in
@@ -480,7 +494,7 @@ record_sync() {
     job_running && return 0
     fs_mount ro $HOME_DIR/mnt-record 2>/dev/null || return 0
     if plain_dir $FS_MNT/boot && plain_file $FS_MNT/boot/installed && record_take $FS_MNT/boot/installed &&
-        record_newer "$(sed -n 's/^date=//p' $HOME_DIR/installed.new | head -n1)" "$(installed date)"; then
+        [ "$(record_pick "$(head -c 1048576 $BYNAME/boot_b 2>/dev/null | sha256sum | cut -c1-64)" $HOME_DIR/installed.new $HOME_DIR/installed)" = new ]; then
         mv $HOME_DIR/installed.new $HOME_DIR/installed && say "the record of the Linux-side update taken: $(installed version)"
     fi
     rm -f $HOME_DIR/installed.new
@@ -501,11 +515,11 @@ record_put() {
 update_tree() {
     [ -s $IN/$F_SYSTEM ] || die "no $F_SYSTEM in this release: it cannot update a system in place (install it instead)"
     fs_mount rw || die "cannot mount the installed system"
-    if [ "$(layout $MNT)" = flat ]; then
+    case $(layout $MNT) in flat|migrating)
         step migrate
         migrate $MNT || { fs_umount; die "moving the installation to the system/ layout failed"; }
-        say "moved to the system/ layout (data/ keeps the flash-drive image)"
-    fi
+        say "moved to the system/ layout (data/ keeps the flash-drive image)" ;;
+    esac
     step system
     _need=$(( $(fsize $IN/$F_SYSTEM) / 256 + 65536 ))   # the tree unpacks to about four times the tarball, plus 64 MiB
     _free=$(df -k $MNT | awk 'NR == 2 { print $4 }')

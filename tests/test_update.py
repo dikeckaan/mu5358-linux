@@ -54,6 +54,23 @@ class BootOk(Stubbed):
         self.assertIn('sleep 30\n', log)
         self.assertIn('logger -t mu5358-boot-ok', log)
 
+    def test_a_fallback_boot_becomes_permanent(self):
+        # review #4: booted from system.old (boot/init's fallback), boot-ok swaps it in for good; the tree that failed
+        # three times is kept as system.failed
+        for name, v in (('system', 'v2026.11.02.2'), ('system.old', 'v2026.11.02.1')):
+            (self.disk / name / 'etc/mu5358').mkdir(parents=True)
+            (self.disk / name / 'etc/mu5358/version').write_text(v + '\n')
+        (self.disk / 'boot/tries').write_text('3\n')
+        (self.etc / 'version').write_text('v2026.11.02.1\n')
+        r, log = self.run_script('mu5358-boot-ok', env={'MU5358_ROOT': str(self.disk / 'system.old')})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual((self.disk / 'system/etc/mu5358/version').read_text().strip(), 'v2026.11.02.1')
+        self.assertEqual((self.disk / 'system.failed/etc/mu5358/version').read_text().strip(), 'v2026.11.02.2')
+        self.assertFalse((self.disk / 'system.old').exists())
+        self.assertEqual((self.disk / 'boot/ok').read_text().strip(), 'v2026.11.02.1')
+        self.assertEqual((self.disk / 'boot/tries').read_text().strip(), '0')
+        self.assertIn('permanent', log)
+
     def test_a_flat_install_has_no_boot_dir_and_nothing_is_written(self):
         shutil.rmtree(self.disk / 'boot')
         (self.etc / 'version').write_text('v2026.11.02.1\n')
@@ -76,6 +93,7 @@ class Notice(Stubbed):
         r, log = self.run_script('mu5358-update-notice', env={'SLEEPS': '5'})
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertNotIn('update notice', log)
+        self.assertNotIn('sleep', log, 'off is checked before the first sleep (review #10)')
 
 
 if __name__ == '__main__':
@@ -273,6 +291,47 @@ class Updater(unittest.TestCase):
         self.assertEqual(statuses[0]['boot'], T1)
         self.assertEqual(statuses[1]['boot'], T2)
         self.assertIn(f'KERNEL-{T2}'.encode(), (self.t / 'parts/boot_b').read_bytes())
+
+    def test_the_record_keeps_the_installers_target(self):
+        # review #2: root_layout answered "region" for every device; a fulldumpdb installation then lost its system
+        # on the Android side. boot/init publishes the target; without it the record's own target stands.
+        r = self.sh(f'mkrel {T2}; sed -i "s/^target=.*/target=fulldumpdb/" /disk/boot/installed; rm -f /t/target; unset MU5358_ROOT_TARGET; sh $S apply >/dev/null 2>&1; echo "rc=$?"')
+        self.assertIn('rc=0', r.stdout, r.stderr)
+        self.assertEqual(self.installed('target'), 'fulldumpdb')
+
+    def test_a_small_filesystem_with_room_for_the_tree_updates(self):
+        # review #3: mu300's "1 GB + 1 GB a system" rule refused fulldumpdb (2 GiB, two trees, 1.3 GB free)
+        r = self.sh(f'mkrel {T2}; printf \'#!/bin/sh\\necho "Filesystem 1024-blocks Used Available Capacity Mounted"\\necho "/dev/x 2000000 700000 600000 54%% /disk"\\n\' > /t/bin/df; chmod 755 /t/bin/df; sh $S apply; echo "rc=$?"')
+        self.assertIn('rc=0', r.stdout, r.stdout[-800:] + r.stderr[-800:])
+        self.assertEqual(self.version(), T2)
+
+    def test_the_carry_runs_with_the_base_trees_tools(self):
+        # review #6: the suite only ever took the settings-keep fallback. With the base tree's mu300-carry and its
+        # static busybox in the fake release tree (the base tarball is the maintainer's; docker must be aarch64) the
+        # real carry runs: the user's file carried by the manifest, the report written, the fallback line absent.
+        base = Path('/Volumes/mu300rel12/r30/release/v2026.10.29.1/mu300-openwrt-luci-rootfs.tar.gz')
+        if not base.exists():
+            self.skipTest('no base rootfs tarball')
+        arch = subprocess.run([DOCKER, 'run', '--rm', BUSYBOX_IMAGE, 'uname', '-m'], capture_output=True, text=True).stdout.strip()
+        if arch != 'aarch64':
+            self.skipTest(f'docker runs {arch}, the carry binary is aarch64')
+        tools = self.t / 'tools'
+        tools.mkdir()
+        subprocess.run(['tar', '-xzf', str(base), '-C', str(tools), './opt/mu300/bin/mu300-carry', './opt/mu300/bin/busybox'], check=True)
+        r = self.sh(f'mkrel {T2}; T=/t/rel/tree; mkdir -p $T/opt/mu5358/bin $T/opt/mu5358/lib && cp /t/tools/opt/mu300/bin/mu300-carry $T/opt/mu5358/bin/mu5358-carry && '
+                    f'cp /t/tools/opt/mu300/bin/busybox $T/opt/mu5358/bin/busybox && cp $S $T/opt/mu5358/bin/mu5358-update && chmod 755 $T/opt/mu5358/bin/*; '
+                    f'$T/opt/mu5358/bin/mu5358-carry manifest $T openwrt-luci {T2} | gzip > $T/etc/mu5358/image-manifest.gz; '
+                    f'(cd $T && tar -czf ../mu5358-system.tar.gz .); (cd /t/rel && {{ echo "# version {T2}"; sha256sum mu5358-system.tar.gz mu5358-kernel.Image.gz mu5358-ramdisk.tar.gz mu5358-update mu5358-release; }} > SHA256SUMS); '
+                    f'mkdir -p /disk/system/opt/mu5358/bin && cp /t/tools/opt/mu300/bin/mu300-carry /disk/system/opt/mu5358/bin/mu5358-carry; '
+                    f'/disk/system/opt/mu5358/bin/mu5358-carry manifest /disk/system openwrt-luci {T1} | gzip > /disk/system/etc/mu5358/image-manifest.gz; '
+                    f'echo mine > /disk/system/etc/config/mine; echo added > /disk/system/root/added 2>/dev/null || {{ mkdir -p /disk/system/root && echo added > /disk/system/root/added; }}; '
+                    f'sh $S apply; echo "rc=$?"')
+        self.assertIn('rc=0', r.stdout, r.stdout[-1500:] + r.stderr[-800:])
+        self.assertNotIn('does not bring what carries everything over', r.stdout)
+        self.assertIn('carrying your files over', r.stdout)
+        self.assertEqual((self.t / 'disk/system/etc/config/mine').read_text().strip(), 'mine')
+        self.assertEqual((self.t / 'disk/system/root/added').read_text().strip(), 'added')
+        self.assertTrue((self.t / 'disk/system/etc/mu5358/update-report').exists())
 
     def test_status_json(self):
         r = self.sh('sh $S status')
