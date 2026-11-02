@@ -651,6 +651,33 @@ class Update(unittest.TestCase):
         carry = re.search(r'^CARRY="([^"]*)"', src, re.M).group(1).split()
         self.assertIn('etc/mu5358/update-check', carry)
 
+    def test_lz4_is_pinned_built_static_and_shipped(self):
+        """The updater packs the init_boot ramdisk LZ4-legacy (lz4 -l); the base rootfs has no lz4, so the release
+        builds a static one from a pinned source tarball and customize.sh ships it at /opt/mu5358/bin/lz4."""
+        b = (TOP / 'tools/lz4/build.sh').read_text(encoding='utf-8')
+        self.assertIsNotNone(re.search(r'^V=1\.10\.0$', b, re.M))
+        self.assertIsNotNone(re.search(r'^SHA=[0-9a-f]{64}$', b, re.M))
+        self.assertIn('sha256sum -c', b)
+        self.assertIn('LDFLAGS=-static', b)
+        self.assertIn('--platform linux/arm64', b)
+        mk = (TOP / 'tools/make-release.sh').read_text(encoding='utf-8')
+        self.assertIn('tools/lz4/build.sh', mk)
+        c = (TOP / 'openwrt/customize.sh').read_text(encoding='utf-8')
+        self.assertIn('"$R/opt/mu5358/bin/lz4"', c)
+        self.assertIn('tools/lz4/lz4', (TOP / '.gitignore').read_text(encoding='utf-8'))
+
+    def test_carry_lists_agree(self):
+        """What the Android-side update carries (the installer's CARRY) is inside what the Linux-side carry keeps as
+        the user's area (mu5358-update's userarea rule) and in its settings-keep fallback (keep_list)."""
+        src = (TOP / 'installer/mu5358-install.sh').read_text(encoding='utf-8')
+        carry = re.search(r'^CARRY="([^"]*)"', src, re.M).group(1).split()
+        up = (TOP / 'openwrt/update/mu5358-update').read_text(encoding='utf-8')
+        area = re.search(r'function userarea\(p\) \{ return under\(p, "([^"]*)"\)', up).group(1).split('|')
+        keep = re.search(r'^        openwrt\) echo "([^"]*)" ;;', up[up.index('keep_list() {'):], re.M).group(1).split()
+        for p in carry:
+            self.assertTrue(any(p == a or p.startswith(a + '/') for a in area), f'{p} is outside the carry\'s user area')
+            self.assertTrue(any(p == k or p.startswith(k + '/') for k in keep), f'{p} is not in keep_list')
+
     def test_the_page_knows_the_new_assets(self):
         gh = (TOP / 'site/assets/web-installer/github.js').read_text(encoding='utf-8')
         for n in ('mu5358-system.tar.gz', 'mu5358-update', 'mu5358-release'):

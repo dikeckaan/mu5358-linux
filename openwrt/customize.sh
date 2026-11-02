@@ -326,6 +326,11 @@ for n in mu5358-boot-ok mu5358-update-notice; do
     ln -sf "../init.d/$n" "$R/etc/rc.d/S99$n"
 done
 [ -e "$R/etc/mu5358/update-check" ] || echo on > "$R/etc/mu5358/update-check"
+# the static lz4 the updater packs the ramdisk with (tools/lz4/build.sh; a release must have it, a bench run may not)
+LZ4=$(cd "$(dirname "$0")/.." && pwd)/tools/lz4/lz4
+if [ -x "$LZ4" ]; then cp "$LZ4" "$R/opt/mu5358/bin/lz4" && chmod 755 "$R/opt/mu5358/bin/lz4"
+elif [ -n "${VERSION:-}" ]; then echo "no tools/lz4/lz4 (tools/lz4/build.sh): a release needs it" >&2; exit 1
+else echo "no tools/lz4/lz4: the updater cannot write the boot images from Linux" >&2; fi
 # the updater itself, over rebrand.sh's refusing stub (mu300-update's port: openwrt/update/mu5358-update)
 cp "$UP/mu5358-update" "$R/opt/mu5358/bin/mu5358-update" || { echo "no openwrt/update/mu5358-update" >&2; exit 1; }
 chmod 755 "$R/opt/mu5358/bin/mu5358-update"
