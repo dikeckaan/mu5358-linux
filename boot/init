@@ -253,7 +253,6 @@ if [ -z "$ROOTDEV" ]; then
     log "stage=ready"
     while :; do sleep 3600; done
 fi
-mkdir -p /newroot
 loopdev=$(losetup -f)
 if [ "$ROOTDEV" = /dev/mmcblk0 ]; then
     losetup -o "$ROOTOFF" "$loopdev" /dev/mmcblk0
@@ -300,13 +299,84 @@ root_fsck() {  # root_fsck DEV: always true
     return 0
 }
 root_fsck "$rootsrc"
-if ! mount -t ext4 -o noatime "$rootsrc" /newroot; then
+mkdir -p /disk
+if ! mount -t ext4 -o noatime "$rootsrc" /disk; then
     log "stage=root-mount-FAILED dev=$rootsrc offset=$ROOTOFF"
     [ "$rootsrc" = "$loopdev" ] && losetup -d "$loopdev"
     log "stage=ready"
     while :; do sleep 3600; done
 fi
 log "stage=root-mounted dev=$rootsrc offset=$ROOTOFF log=$LOGDEV@$LOGSEC"
+# --- tree-select begin
+# The filesystem's layout (W2, docs/superpowers/plans/2026-11-02-updater-from-linux.md): system/ is the tree,
+# system.old/ the one before the last update, data/ what persists across updates (bind-mounted at /data: the flash
+# drive's image, the previous boot images), boot/tree the name of the tree to boot, boot/tries the boots of it
+# without boot/ok (mu5358-boot-ok writes ok and zeroes tries 30 s into a working system). Three boots without ok,
+# or a tree that is missing or has no init, and system.old boots instead - the persistent log says so. A flat
+# installation (from before 2026-11-02: the tree at the top) still boots. The tests cut this block out.
+MU=${MU:-/mu}
+tree_usable() { [ -e "$1/sbin/init" ] && [ -s "$1/etc/mu5358/version" ]; }
+tree_select() {  # tree_select DISK: TREE = the directory to boot (. for flat); false when there is nothing to boot
+    _d=$1
+    _name=$(head -n 1 "$_d/boot/tree" 2>/dev/null)
+    case $_name in
+        '') _name=system ;;
+        *[./]*) log "stage=tree-name-ignored name=$_name"; _name=system ;;
+    esac
+    _tries=$(cat "$_d/boot/tries" 2>/dev/null)
+    case $_tries in ''|*[!0-9]*) _tries=0 ;; esac
+    _ok=$(head -n 1 "$_d/boot/ok" 2>/dev/null)
+    TREE=
+    if tree_usable "$_d/$_name"; then
+        _v=$(head -n 1 "$_d/$_name/etc/mu5358/version")
+        if [ "$_tries" -ge 3 ] && [ "$_ok" != "$_v" ] && tree_usable "$_d/system.old"; then
+            log "stage=tree-fallback tries=$_tries tree=$_name version=$_v: booting system.old"
+            TREE=system.old
+        else
+            TREE=$_name
+        fi
+    elif tree_usable "$_d/system.old"; then
+        log "stage=tree-fallback missing tree=$_name: booting system.old"
+        TREE=system.old
+    elif [ -e "$_d/sbin/init" ]; then
+        log "stage=tree-flat"
+        TREE=.
+    fi
+    [ -n "$TREE" ] || return 1
+    if [ "$TREE" != . ]; then
+        mkdir -p "$_d/boot" && echo $((_tries + 1)) > "$_d/boot/tries" && sync
+    fi
+    return 0
+}
+tree_mount() {  # tree_mount DISK NEWROOT: the tree as the new root, the filesystem and data/ visible inside it
+    if [ "$TREE" = . ]; then mount --bind "$1" "$2"; return; fi
+    mount --bind "$1/$TREE" "$2" || return 1
+    mkdir -p "$2/mnt/mu5358-disk" "$2/data" "$1/data"
+    mount --bind "$1" "$2/mnt/mu5358-disk"
+    mount --bind "$1/data" "$2/data"
+}
+ramdisk_publish() {  # ramdisk_publish NEWROOT: this ramdisk's busybox (cpio), misc block and modules, for the updater
+    _r=$1/run/mu5358/ramdisk
+    rm -rf "$_r" && mkdir -p "$_r/modules" || return 1
+    cp "$MU/busybox" "$_r/busybox" 2>/dev/null
+    cp "$MU/misc-bc-android.bin" "$_r/misc-bc-android.bin" 2>/dev/null
+    cp "$MU"/modules/*.ko "$_r/modules/" 2>/dev/null
+    return 0
+}
+# --- tree-select end
+mkdir -p /newroot
+if ! tree_select /disk; then
+    log "stage=root-has-no-init"
+    log "stage=ready"
+    while :; do sleep 3600; done
+fi
+if ! tree_mount /disk /newroot; then
+    log "stage=tree-mount-FAILED tree=$TREE"
+    log "stage=ready"
+    while :; do sleep 3600; done
+fi
+log "stage=tree-mounted tree=$TREE tries=$(cat /disk/boot/tries 2>/dev/null)"
+ramdisk_publish /newroot
 init=/sbin/init
 [ -x "/newroot$init" ] || init=/lib/systemd/systemd
 if [ ! -x "/newroot$init" ]; then
@@ -314,9 +384,9 @@ if [ ! -x "/newroot$init" ]; then
     log "stage=ready"
     while :; do sleep 3600; done
 fi
-# /mu5358-stay on the system: stay here, the system mounted at /newroot, to look at it with chroot
+# /mu5358-stay on the system: stay here, the system mounted at /newroot (the filesystem at /disk), to look at it
 if [ -e /newroot/mu5358-stay ]; then
-    log "stage=stay (/mu5358-stay) - root at /newroot"
+    log "stage=stay (/mu5358-stay) - root at /newroot, the filesystem at /disk"
     log "stage=ready"
     while :; do sleep 3600; done
 fi
