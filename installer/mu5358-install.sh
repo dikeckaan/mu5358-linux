@@ -237,7 +237,8 @@ status() {
         printf ',"region":{"state":"%s","start":%s,"size":%s},"userdata":{"start":%s,"size":%s,"kernel_size":%s}' \
             $RSTATE $R0 $RSIZE $UD_START $(( (UD_END + 1 - UD_START) * 512 )) $(( $(ud_kernel_sectors) * 512 ))
     fi
-    printf ',"root":"%s"' "$(installed target)"
+    printf ',"root":"%s","layout":"%s"' "$(installed target)" \
+        "$(_l=$(installed layout); [ -n "$_l" ] && echo "$_l" || { [ -n "$(installed version)" ] && echo flat || echo none; })"
     printf ',"installed":"%s","backup":%s,"job":"%s","free_data":%s}\n' "$(js "$(installed version)")" \
         "$([ -f $BACKUP/SHA256SUMS ] && echo true || echo false)" "$_job" \
         "$(df -k /data | awk 'NR == 2 { print $4 * 1024 }')"
@@ -391,6 +392,14 @@ chain() {
 }
 
 # the vendor files of this device, into the system mounted at $1 (openwrt/customize.sh's, from Android's mounts)
+# ---- layout (W2) -------------------------------------------------------------------------------------------------
+# The system lives in system/ inside the filesystem (docs/superpowers/plans/2026-11-02-updater-from-linux.md): system.old/
+# for the rollback, data/ bind-mounted at /data (the flash-drive image, prev.* boot images), boot/tree naming the tree
+# to boot. An installation from before 2026-11-02 is flat: the tree at the top. tree_dir MNT: where the tree is.
+tree_dir() { if [ -e "$1/system/sbin/init" ]; then echo "$1/system"; else echo "$1"; fi; }
+layout() { if [ -e "$1/system/sbin/init" ]; then echo tree; elif [ -e "$1/sbin/init" ]; then echo flat; else echo none; fi; }
+LAYOUT=
+
 vendor_files() {
     _r=$1
     mkdir -p $_r/lib/mu5358/modules $_r/odm/firmware/aic8800 $_r/mnt/vendor $_r/etc/mu5358 || return 1
@@ -473,12 +482,12 @@ carry_save() {   # the installed system's files into $HOME_DIR/carry.tar, from t
     fi
     mkdir -p $MNT && umount $MNT 2>/dev/null
     mount -t ext4 -o ro,noload $_src $MNT || die "cannot mount the installed system"
-    _old=$(cat $MNT/etc/mu5358/version 2>/dev/null)
+    _old=$(cat $(tree_dir $MNT)/etc/mu5358/version 2>/dev/null)
     _new=$(cat $IN/version 2>/dev/null)
     if [ -n "$_old" ] && [ -n "$_new" ] && [ "${MU5358_ALLOW_DOWNGRADE:-}" != 1 ] && [ "$(tag_cmp "$_old" "$_new")" = newer ]; then
         umount $MNT; die "installed $_old is newer than $_new (MU5358_ALLOW_DOWNGRADE=1 to allow)"
     fi
-    (cd $MNT && tar -cf $HOME_DIR/carry.tar $(for p in $CARRY; do [ -e "$p" ] && echo "$p"; done) 2>/dev/null) || true
+    (cd $(tree_dir $MNT) && tar -cf $HOME_DIR/carry.tar $(for p in $CARRY; do [ -e "$p" ] && echo "$p"; done) 2>/dev/null) || true
     say "carrying $(tar -tf $HOME_DIR/carry.tar 2>/dev/null | wc -l) files from $_old"
     umount $MNT
     [ "$TARGET" = region ] && /system/bin/losetup -d $_lo
@@ -526,9 +535,10 @@ system() {
     mkdir -p $MNT
     umount $MNT 2>/dev/null
     mount -t ext4 -o rw,noatime $_d $MNT || die "cannot mount the system"
-    [ -e $MNT/etc/openwrt_release ] || { umount $MNT; die "not an OpenWrt system"; }
-    vendor_files $MNT || { umount $MNT; die "vendor files"; }
-    [ "$UPDATE" = 1 ] && { carry_restore $MNT || { umount $MNT; die "carry"; }; }
+    _t=$(tree_dir $MNT); LAYOUT=$(layout $MNT)
+    [ -e $_t/etc/openwrt_release ] || { umount $MNT; die "not an OpenWrt system"; }
+    vendor_files $_t || { umount $MNT; die "vendor files"; }
+    [ "$UPDATE" = 1 ] && { carry_restore $_t || { umount $MNT; die "carry"; }; }
     sync
     umount $MNT || die "cannot unmount the system"
     if [ -x /system/bin/e2fsck ]; then
@@ -574,7 +584,7 @@ boot_images() {
     write_part $W/init_boot.img $BYNAME/init_boot_b || die "init_boot_b"
     { echo "version=$(cat $IN/version 2>/dev/null)"; echo "date=$(date -u +%FT%TZ)"; echo "target=$TARGET"
       echo "boot_b=$(sha $W/boot.img)"; echo "boot_b_head=$(head -c 1048576 $W/boot.img | sha256sum | cut -c1-64)"
-      echo "init_boot_b=$(sha $W/init_boot.img)"; } > $HOME_DIR/installed
+      echo "init_boot_b=$(sha $W/init_boot.img)"; echo "layout=$LAYOUT"; } > $HOME_DIR/installed
     rm -rf $W
 }
 

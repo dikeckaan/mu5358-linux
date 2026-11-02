@@ -199,6 +199,30 @@ class BootImage(Busybox):
         self.assertIn('rc=1', r.stdout)
 
 
+class Layout(Busybox):
+    """W2: the system lives in system/ inside the filesystem (system.old/, data/, boot/ beside it); an installation
+    from before 2026-11-02 is flat (the tree at the top). tree_dir MNT is where the tree is, layout MNT names it."""
+
+    def test_tree_dir_prefers_system(self):
+        r = self.sh(f'mkdir -p /tmp/m/system/sbin /tmp/m/sbin && : > /tmp/m/system/sbin/init && : > /tmp/m/sbin/init && sh {S} _test tree_dir /tmp/m')
+        self.assertEqual(r.stdout.strip(), '/tmp/m/system', r.stderr)
+
+    def test_tree_dir_is_the_top_when_flat(self):
+        r = self.sh(f'mkdir -p /tmp/m/sbin && : > /tmp/m/sbin/init && sh {S} _test tree_dir /tmp/m')
+        self.assertEqual(r.stdout.strip(), '/tmp/m', r.stderr)
+
+    def test_layout_names_tree_flat_or_none(self):
+        r = self.sh(f'mkdir -p /tmp/m/system/sbin && : > /tmp/m/system/sbin/init && sh {S} _test layout /tmp/m; '
+                    f'mkdir -p /tmp/f/sbin && : > /tmp/f/sbin/init && sh {S} _test layout /tmp/f; mkdir -p /tmp/n && sh {S} _test layout /tmp/n')
+        self.assertEqual(r.stdout.split(), ['tree', 'flat', 'none'], r.stderr)
+
+    def test_status_reports_the_layout_from_the_record(self):
+        src = (TOP / 'installer/mu5358-install.sh').read_text(encoding='utf-8')
+        self.assertIn('"layout":"%s"', src)
+        self.assertIn('echo "layout=$LAYOUT"', src)
+        self.assertRegex(src, r'vendor_files \$\(tree_dir \$MNT\)|_t=\$\(tree_dir \$MNT\)')
+
+
 class Jobs(Busybox):
     def test_a_pid_that_is_not_the_installer_is_no_running_job(self):
         # the pid file outlives a reboot; its number can be another process's by then (the bench, 2026-11-01)
