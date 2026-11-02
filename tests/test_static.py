@@ -662,6 +662,7 @@ class Update(unittest.TestCase):
         self.assertIn('--platform linux/arm64', b)
         mk = (TOP / 'tools/make-release.sh').read_text(encoding='utf-8')
         self.assertIn('tools/lz4/build.sh', mk)
+        self.assertLess(mk.index('tools/lz4/build.sh'), mk.index('bash /w/openwrt/build-rootfs.sh'), 'lz4 is built before the rootfs that ships it (CI run 76)')
         c = (TOP / 'openwrt/customize.sh').read_text(encoding='utf-8')
         self.assertIn('"$R/opt/mu5358/bin/lz4"', c)
         self.assertIn('tools/lz4/lz4', (TOP / '.gitignore').read_text(encoding='utf-8'))
