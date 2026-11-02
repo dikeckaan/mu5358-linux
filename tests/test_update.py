@@ -356,6 +356,11 @@ class Updater(unittest.TestCase):
                     'BYNAME=/t/parts; part_dev boot_b')
         self.assertEqual(r.stdout.split(), ['/dev/mmcblk0p9', '/dev/mmcblk0p7', 'rc=1', '/t/parts/boot_b'], r.stdout + r.stderr)
 
+    def test_clean_removes_the_tree_a_fallback_left(self):
+        # boot-ok keeps the tree that failed three boots as system.failed; clean (and the next apply) remove it
+        r = self.sh('mkdir -p /disk/system.failed/etc && sh $S clean >/dev/null 2>&1; ls /disk')
+        self.assertNotIn('system.failed', r.stdout.split(), r.stdout + r.stderr)
+
     def test_status_json(self):
         r = self.sh('sh $S status')
         self.assertEqual(r.returncode, 0, r.stderr)

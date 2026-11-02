@@ -298,11 +298,13 @@ class MigrateFlat(Busybox):
 
     def test_the_record_with_the_live_boot_b_wins_the_date_only_breaks_ties(self):
         # review #7: a Linux-side apply on a device whose clock is behind wrote an older date and lost
-        live = 'a' * 64
-        new = 'version=v2\ndate=2026-01-01T00:00:00Z\nboot_b_head=' + live + '\n'
-        old = 'version=v1\ndate=2026-11-02T00:00:00Z\nboot_b_head=' + 'b' * 64 + '\n'
-        r = self.sh(f'printf \'{new}\' > /tmp/n; printf \'{old}\' > /tmp/o; sh {S} _test record_pick {live} /tmp/n /tmp/o; '
-                    f'sh {S} _test record_pick {"c" * 64} /tmp/n /tmp/o; sh {S} _test record_pick {"b" * 64} /tmp/n /tmp/o')
+        # the bench (2026-11-02): two releases with the same kernel share boot_b's first MiB, so the whole boot_b and
+        # init_boot_b decide; the date only when neither or both match
+        kb, ki = 'a' * 64, 'i' * 64
+        new = 'version=v2\ndate=2026-01-01T00:00:00Z\nboot_b=' + kb + '\ninit_boot_b=' + ki + '\n'
+        old = 'version=v1\ndate=2026-11-02T00:00:00Z\nboot_b=' + kb + '\ninit_boot_b=' + 'j' * 64 + '\n'
+        r = self.sh(f'printf \'{new}\' > /tmp/n; printf \'{old}\' > /tmp/o; sh {S} _test record_pick {kb} {ki} /tmp/n /tmp/o; '
+                    f'sh {S} _test record_pick {kb} {"x" * 64} /tmp/n /tmp/o; sh {S} _test record_pick {kb} {"j" * 64} /tmp/n /tmp/o')
         self.assertEqual(r.stdout.split(), ['new', 'old', 'old'], r.stderr)
 
     def test_the_newer_record_wins(self):

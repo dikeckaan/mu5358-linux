@@ -439,13 +439,15 @@ migrate() {
 # boot/installed in the filesystem, which the Linux-side updater (mu5358-update) writes too. The newer wins
 # (record_sync, before status and boot-linux); every installation and update here puts its own in (record_put).
 record_newer() { [ -n "$1" ] && [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort | tail -n 1)" = "$1" ]; }
-# record_pick LIVE_HEAD NEW OLD: "new" or "old" - the record whose boot_b_head is the live boot_b's first MiB (a clock
-# that was behind wrote an older date on the Linux side); the date only breaks a tie
+# record_pick LIVE_BOOT_B LIVE_INIT_BOOT_B NEW OLD: "new" or "old" - the record whose boot_b and init_boot_b are the
+# live partitions' (a clock that was behind wrote an older date on the Linux side; two releases with the same kernel
+# share boot_b, so init_boot_b counts too); the date only breaks a tie
 record_pick() {
-    _nh=$(sed -n 's/^boot_b_head=//p' "$2" | head -n 1); _oh=$(sed -n 's/^boot_b_head=//p' "$3" | head -n 1)
-    if [ "$_nh" = "$1" ] && [ "$_oh" != "$1" ]; then echo new
-    elif [ "$_oh" = "$1" ] && [ "$_nh" != "$1" ]; then echo old
-    elif record_newer "$(sed -n 's/^date=//p' "$2" | head -n 1)" "$(sed -n 's/^date=//p' "$3" | head -n 1)"; then echo new
+    _nm=0; [ "$(sed -n 's/^boot_b=//p' "$3" | head -n 1)" = "$1" ] && [ "$(sed -n 's/^init_boot_b=//p' "$3" | head -n 1)" = "$2" ] && _nm=1
+    _om=0; [ "$(sed -n 's/^boot_b=//p' "$4" | head -n 1)" = "$1" ] && [ "$(sed -n 's/^init_boot_b=//p' "$4" | head -n 1)" = "$2" ] && _om=1
+    if [ $_nm = 1 ] && [ $_om = 0 ]; then echo new
+    elif [ $_om = 1 ] && [ $_nm = 0 ]; then echo old
+    elif record_newer "$(sed -n 's/^date=//p' "$3" | head -n 1)" "$(sed -n 's/^date=//p' "$4" | head -n 1)"; then echo new
     else echo old; fi
 }
 fs_mount() {  # fs_mount ro|rw [DIR]: the installed filesystem at DIR ($MNT; FS_LO: the loop device over the region)
@@ -495,7 +497,7 @@ record_sync() {
     job_running && return 0
     fs_mount ro $HOME_DIR/mnt-record 2>/dev/null || return 0
     if plain_dir $FS_MNT/boot && plain_file $FS_MNT/boot/installed && record_take $FS_MNT/boot/installed &&
-        [ "$(record_pick "$(head -c 1048576 $BYNAME/boot_b 2>/dev/null | sha256sum | cut -c1-64)" $HOME_DIR/installed.new $HOME_DIR/installed)" = new ]; then
+        [ "$(record_pick "$(sha256sum < $BYNAME/boot_b | cut -c1-64)" "$(sha256sum < $BYNAME/init_boot_b | cut -c1-64)" $HOME_DIR/installed.new $HOME_DIR/installed)" = new ]; then
         mv $HOME_DIR/installed.new $HOME_DIR/installed && say "the record of the Linux-side update taken: $(installed version)"
     fi
     rm -f $HOME_DIR/installed.new

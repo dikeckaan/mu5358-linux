@@ -2509,9 +2509,12 @@ apply() {
 # apply --no-rollback leaves the system it replaced under the same name (apply_one), for the same reason.
 clean_broken() {
     for os in $SYSTEMS; do
-        [ -d "$DISK/$os.broken" ] || continue
-        is_root "$DISK/$os.broken" && continue
-        rm -rf "$DISK/$os.broken" && printf '%s: removed the copy left by a rollback (%s.broken)\n' "$os" "$os"
+        # (.failed: the tree boot/init gave up on after three boots without ok, kept by mu5358-boot-ok)
+        for _cb in broken failed; do
+            [ -d "$DISK/$os.$_cb" ] || continue
+            is_root "$DISK/$os.$_cb" && continue
+            rm -rf "$DISK/$os.$_cb" && printf '%s: removed the copy left by a %s (%s.%s)\n' "$os" "$([ $_cb = broken ] && echo rollback || echo "failed boot")" "$os" "$_cb"
+        done
     done
     return 0
 }
@@ -2543,6 +2546,7 @@ rollback() {
 
 clean() {
     mounted_disk
+    clean_broken
     for os in $SYSTEMS; do
         if is_root "$DISK/$os.old"; then printf '%s: the previous version is still running: reboot first\n' "$os"
         elif [ -d "$DISK/$os.old" ]; then rm -rf "$DISK/$os.old" && printf '%s: previous version deleted\n' "$os"; fi
