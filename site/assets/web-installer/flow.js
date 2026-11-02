@@ -2,8 +2,14 @@
 // lines, what the status means, which targets and sizes are offered. The device script (installer/mu5358-install.sh)
 // checks everything again and has the last word; this is for telling the user before anything is sent.
 
+import { F } from "./github.js";
+
 export const MIB = 1024 * 1024, GIB = 1024 * MIB;
 export const INSTALL_STEPS = ["check", "backup", "space", "chain", "system", "vendor", "boot", "done"];
+// an update (W2): the settings carried, a flat installation moved to the system/ layout, the tree unpacked and swapped
+export const UPDATE_STEPS = ["check", "carry", "migrate", "system", "vendor", "boot", "done"];
+// what the page pushes for the job: the image for an installation, the tree for an update (the tools when the release has them)
+export const pushedFor = (kind) => (kind === "update" ? [F.sums, F.kernel, F.ramdisk, F.system, F.tools] : [F.sums, F.kernel, F.ramdisk, F.image, F.tools]);
 export const UNINSTALL_STEPS = ["misc", "boot", "erase", "done"];
 export const REGION_SIZES = [4096, 8192, 16384];     // MiB
 export const REGION_DEFAULT = 4096;
@@ -67,6 +73,8 @@ export function parseStatus(line) {
     free_data: NUM(o.free_data),
     // newer scripts: the region made from userdata, and where the installed system is
     region: null, userdata: null, root: "",
+    // W2: the system lives in system/ (tree) or at the top of the filesystem (flat, before 2026-11-02)
+    layout: oneOf(o.layout, ["tree", "flat", "none"]),
   };
   if (o.region && typeof o.region === "object") {
     st.region = { state: oneOf(o.region.state, ["absent", "ours", "free"]), start: NUM(o.region.start), size: NUM(o.region.size) };

@@ -432,8 +432,8 @@ migrate() {
 # boot/installed in the filesystem, which the Linux-side updater (mu5358-update) writes too. The newer wins
 # (record_sync, before status and boot-linux); every installation and update here puts its own in (record_put).
 record_newer() { [ -n "$1" ] && [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort | tail -n 1)" = "$1" ]; }
-fs_mount() {  # fs_mount ro|rw: the installed filesystem at $MNT (FS_LO: the loop device over the region)
-    FS_LO=
+fs_mount() {  # fs_mount ro|rw [DIR]: the installed filesystem at DIR ($MNT; FS_LO: the loop device over the region)
+    FS_LO= FS_MNT=${2:-$MNT}
     case $(installed target) in
         region) region_info && [ "$RSTATE" = ours ] || return 1
                 _ro=; [ "$1" = rw ] || _ro=-r
@@ -442,16 +442,19 @@ fs_mount() {  # fs_mount ro|rw: the installed filesystem at $MNT (FS_LO: the loo
         fulldumpdb) _src=$BYNAME/fulldumpdb ;;
         *) return 1 ;;
     esac
-    mkdir -p $MNT && umount $MNT 2>/dev/null
+    mkdir -p $FS_MNT && umount $FS_MNT 2>/dev/null
     _o=rw,noatime; [ "$1" = rw ] || _o=ro,noload
-    mount -t ext4 -o $_o $_src $MNT || { fs_umount; return 1; }
+    mount -t ext4 -o $_o $_src $FS_MNT || { fs_umount; return 1; }
 }
-fs_umount() { umount $MNT 2>/dev/null; [ -z "$FS_LO" ] || /system/bin/losetup -d $FS_LO 2>/dev/null; FS_LO=; }
+fs_umount() { umount $FS_MNT 2>/dev/null; [ -z "$FS_LO" ] || /system/bin/losetup -d $FS_LO 2>/dev/null; FS_LO=; }
+# (status runs while a job may be writing with the filesystem mounted at $MNT: never while a job runs, and at a
+# mount point of its own, so that no mount of the job's is touched)
 record_sync() {
     [ -f $HOME_DIR/installed ] || return 0
-    fs_mount ro 2>/dev/null || return 0
-    if [ -s $MNT/boot/installed ] && record_newer "$(sed -n 's/^date=//p' $MNT/boot/installed | head -n1)" "$(installed date)"; then
-        cp $MNT/boot/installed $HOME_DIR/installed.new && mv $HOME_DIR/installed.new $HOME_DIR/installed &&
+    job_running && return 0
+    fs_mount ro $HOME_DIR/mnt-record 2>/dev/null || return 0
+    if [ -s $FS_MNT/boot/installed ] && record_newer "$(sed -n 's/^date=//p' $FS_MNT/boot/installed | head -n1)" "$(installed date)"; then
+        cp $FS_MNT/boot/installed $HOME_DIR/installed.new && mv $HOME_DIR/installed.new $HOME_DIR/installed &&
             say "the record of the Linux-side update taken: $(installed version)"
     fi
     fs_umount
@@ -459,7 +462,7 @@ record_sync() {
 }
 record_put() {
     fs_mount rw || { say "cannot mount the system to put the record in"; return 0; }
-    if [ -d $MNT/boot ]; then cp $HOME_DIR/installed $MNT/boot/installed.new && mv $MNT/boot/installed.new $MNT/boot/installed; sync; fi
+    if [ -d $FS_MNT/boot ]; then cp $HOME_DIR/installed $FS_MNT/boot/installed.new && mv $FS_MNT/boot/installed.new $FS_MNT/boot/installed; sync; fi
     fs_umount
     return 0
 }

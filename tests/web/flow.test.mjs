@@ -147,3 +147,19 @@ test("jobKind: update where a system is installed, install elsewhere", () => {
   assert.equal(jobKind({ installed: "", root: "" }, "region"), "install");
   assert.equal(jobKind(null, "region"), "install");
 });
+
+test("W2: an update pushes the tree, an install the image; the update's steps; status knows the layout", async () => {
+  const { pushedFor, UPDATE_STEPS, INSTALL_STEPS } = await import("../../site/assets/web-installer/flow.js");
+  assert.deepEqual(pushedFor("update"), ["SHA256SUMS", "mu5358-kernel.Image.gz", "mu5358-ramdisk.tar.gz", "mu5358-system.tar.gz", "mu5358-tools.tar.gz"]);
+  assert.deepEqual(pushedFor("install"), ["SHA256SUMS", "mu5358-kernel.Image.gz", "mu5358-ramdisk.tar.gz", "mu5358-openwrt.img.gz", "mu5358-tools.tar.gz"]);
+  assert.deepEqual(UPDATE_STEPS, ["check", "carry", "migrate", "system", "vendor", "boot", "done"]);
+  assert.deepEqual(INSTALL_STEPS, ["check", "backup", "space", "chain", "system", "vendor", "boot", "done"]);
+  const st = parseStatus('MU5358-STATUS {"model":"U30 Pro","installed":"v2026.11.02.1","root":"region","layout":"flat","job":"none"}');
+  assert.equal(st.layout, "flat");
+  assert.equal(parseStatus('MU5358-STATUS {"model":"x","layout":"weird"}').layout, "unknown");
+  const { filesOf } = await import("../../site/assets/web-installer/github.js");
+  const rel = { assets: new Map([["mu5358-system.tar.gz", {}], ["mu5358-update", {}], ["mu5358-release", {}], ["mu5358-tools.tar.gz", {}]]) };
+  const files = filesOf(rel);
+  assert.ok(files.includes("mu5358-system.tar.gz"));
+  assert.ok(!files.includes("mu5358-update") && !files.includes("mu5358-release"), "the page needs neither");
+});

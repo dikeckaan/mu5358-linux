@@ -13,7 +13,7 @@
 import { AdbError } from "./adb/errors.js";
 import { shell } from "./adb/shell.js";
 import { push } from "./adb/sync.js";
-import { classifyLine, parseStatus } from "./flow.js";
+import { classifyLine, parseStatus, pushedFor } from "./flow.js";
 import { mask as pageMask, pageMasker } from "./privacy.js";
 import { F } from "./github.js";
 import { isHash } from "./sha512crypt.js";
@@ -22,7 +22,7 @@ export const STAGE = "/data/local/tmp/mu5358-web";
 export const STAGED_SCRIPT = `${STAGE}/mu5358-install.sh`;
 export const ROOT_COPY = "/data/adb/mu5358/mu5358-install.sh";
 // the release's files the script takes from STAGE/in (its take command); the script and its list go to STAGE
-export const PUSHED_IN = [F.sums, F.kernel, F.ramdisk, F.image, F.tools];      // F.tools when the release has it
+// (which of them a job needs: flow.js pushedFor - the image for an installation, the tree for an update)
 export const BACKUP_FILES = ["boot_b.img.gz", "init_boot_b.img.gz", "misc-4k.bin", "SHA256SUMS"];
 
 export class DeviceError extends Error {
@@ -99,8 +99,8 @@ export class Mu5358Device {
   }
 
   // the release's files, to STAGE/in; onProgress(name, sent, total) over all of them
-  async pushRelease(files, onProgress = () => {}, signal) {
-    const names = PUSHED_IN.filter((n) => files.has(n));
+  async pushRelease(files, onProgress = () => {}, signal, kind = "install") {
+    const names = pushedFor(kind).filter((n) => files.has(n));
     const total = names.reduce((s, n) => s + files.get(n).size, 0);
     let before = 0;
     for (const name of names) {

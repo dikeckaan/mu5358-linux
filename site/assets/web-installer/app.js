@@ -15,7 +15,7 @@ import { AdbError } from "./adb/errors.js";
 import { fingerprint } from "./adb/key.js";
 import { ADB_FILTERS, findAdbInterface, openUsbTransport, platformOf } from "./adb/usb.js";
 import { DeviceError, Mu5358Device, ROOT_COPY, STAGED_SCRIPT } from "./device.js";
-import { INSTALL_STEPS, MIB, REGION_DEFAULT, UNINSTALL_STEPS, bootBlockers, defaultTarget, deviceBlockers, fmtSize, installBlockers,
+import { INSTALL_STEPS, MIB, REGION_DEFAULT, UNINSTALL_STEPS, UPDATE_STEPS, bootBlockers, defaultTarget, deviceBlockers, fmtSize, installBlockers,
   jobExit, jobKind, jobRunning, parseSums, passwordProblem, propBlockers, rebootPending, targets } from "./flow.js";
 import { F, GithubError, filesOf, loadReleases } from "./github.js";
 import { loadKey } from "./keystore.js";
@@ -510,15 +510,15 @@ async function startInstall(args, kind = "install") {
   render();
   try {
     await pushScripts();
-    if (S.taken !== S.verified.tag) {
+    if (S.taken !== S.verified.tag + ":" + kind) {
       await S.dev.pushRelease(S.files, (name, sent, total) => {
         S.job.push = { name, sent, total };
         const bar = document.getElementById("wi-push-bar");
         if (bar) { bar.style.width = (100 * sent / total).toFixed(1) + "%"; document.getElementById("wi-push-text").textContent = t("job.pushing", name, size(sent), size(total)); } else render();
-      });
+      }, undefined, kind);
       S.job.phase = "take"; render();
       await S.dev.take(S.verified.sumsSha);
-      S.taken = S.verified.tag;
+      S.taken = S.verified.tag + ":" + kind;
     }
     if (kind === "install") {
       if (!S.pwHash) throw new DeviceError("no-password");
@@ -879,7 +879,7 @@ function panelJob() {
   if (j.phase === "take") p.append(wait(t("job.take")));
   if (j.phase === "password") p.append(wait(t("job.password")));
   if (j.phase === "start") p.append(wait(t("job.start")));
-  const names = kind === "uninstall" ? UNINSTALL_STEPS : INSTALL_STEPS;
+  const names = kind === "uninstall" ? UNINSTALL_STEPS : kind === "update" ? UPDATE_STEPS : INSTALL_STEPS;
   if (j.phase === "follow" || j.phase === "end") {
     p.append(h("ol", { class: "wi-steps" }, names.map((n) => h("li", { class: j.done.includes(n) ? "done" : j.now === n ? "now" : "" }, h("span", {}, t("step." + n)), h("span", { class: "small" }, t("step." + n + ".text"))))));
   }

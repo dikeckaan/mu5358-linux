@@ -18,8 +18,10 @@ export const F = {
 // mu5358-tools.tar.gz (gpt-userdata, f2fs-shrink: the region) from v2026.10.30.2 on
 export const REQUIRED_FILES = [F.sums, F.sig, F.image, F.kernel, F.ramdisk, F.script, F.list];
 export const RELEASE_FILES = [...REQUIRED_FILES, F.tools, F.system, F.updater, F.release];
-// the files of this release the page needs: the required ones, and the tools when the release has them
-export const filesOf = (rel) => RELEASE_FILES.filter((n) => REQUIRED_FILES.includes(n) || rel.assets.has(n));
+// the files of this release the page needs: the required ones, the tools and the tree when the release has them
+// (the updater and the tag line are the device's own updater's: the page checks the signature itself)
+export const PAGE_FILES = [...REQUIRED_FILES, F.tools, F.system];
+export const filesOf = (rel) => PAGE_FILES.filter((n) => REQUIRED_FILES.includes(n) || rel.assets.has(n));
 
 export class GithubError extends Error {
   constructor(code, message, extra) { super(message || code); this.name = "GithubError"; this.code = code; Object.assign(this, extra || {}); }

@@ -256,6 +256,16 @@ class MigrateFlat(Busybox):
             body = src[src.index(fn):]
             self.assertIn('record_sync', body[:body.index('\n}\n')], fn)
 
+    def test_record_sync_never_touches_a_running_jobs_mount(self):
+        # status is polled while a job writes with the filesystem at $MNT (2026-11-02 review): the sync skips a
+        # running job and mounts at a point of its own
+        src = (TOP / 'installer/mu5358-install.sh').read_text(encoding='utf-8')
+        body = src[src.index('record_sync() {'):]
+        body = body[:body.index('\n}\n')]
+        self.assertLess(body.index('job_running && return 0'), body.index('fs_mount ro'))
+        self.assertIn('fs_mount ro $HOME_DIR/mnt-record', body)
+        self.assertNotIn('$MNT/', body)
+
     def test_the_newer_record_wins(self):
         r = self.sh(f'sh {S} _test record_newer 2026-11-02T10:00:00Z 2026-11-02T09:00:00Z; echo $?; '
                     f'sh {S} _test record_newer 2026-11-02T09:00:00Z 2026-11-02T10:00:00Z; echo $?; sh {S} _test record_newer "" 2026-11-02T10:00:00Z; echo $?')
