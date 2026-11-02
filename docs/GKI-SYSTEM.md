@@ -24,7 +24,7 @@ the below on the root filesystem (from Android: `customize.sh ROOT /vendor_dlkm/
 | mu5358-cell | S99 | mu300's `mobile-data watch` (redial after two failed checks) |
 | (panel) | - | mu300's LuCI panel as `luci-app-mu5358` (ubus `mu5358dash`), the Aurora theme, ttyd: `http://192.168.58.1/cgi-bin/luci/admin/home`, root's password |
 | mu5358-usb | S99 | re-enumerates the USB gadget (5 s off) while no host has it: not configured, no carrier, or our TX still while the host's packets come in |
-| mu5358-boot-ok | S99 | 30 s into a working system: `boot/ok` and `boot/tries` = 0 on the filesystem (boot/init boots `system.old` after three boots without it); misc is never touched |
+| mu5358-boot-ok | S99 | 30 s into a working system: `boot/ok` and `boot/tries` = 0 on the filesystem (boot/init boots `system.old` after three boots without it); a fallback boot is made permanent (the failed tree kept as `system.failed`); misc is never touched |
 | mu5358-update-notice | S99 | 5 min after boot and every 6 h: `mu5358-update notice` asks GitHub for the newest release (one small API call; `/etc/mu5358/update-check off` stops it) and writes `/run/mu5358/update-available` for the login note, the panel and the screen |
 
 mu300-post is not used: it makes the running slot the default boot (`mu300-next-boot --rearm`); mu5358-boot-ok is its
@@ -59,8 +59,25 @@ Updates run in three ways, all with the settings carried (`/etc`, root's keys, t
   switch here).
 - A restart after any update starts Android: Linux is the one-shot trial, and it is started again from the page
   ("Restart into Linux once"). The page learns a Linux-side update from `boot/installed` before `status` and
-  `boot-linux` (the record is read key by key, never as a file; the filesystem is mounted nosuid,nodev and no link
-  in it is followed).
+  `boot-linux` (the record is read key by key, never as a file; the record whose `boot_b` and `init_boot_b` are
+  the live partitions' wins, the date only breaks a tie; the filesystem is mounted nosuid,nodev and no link in it
+  is followed).
+
+**The bench run of 2026-11-02 (v2026.11.01.5 → .02.1 → .02.2 → .02.3, the rollback, the fallback).** From Android
+(the installer's `update` with the tree): the migration, the swap, the boot images and the trial boot in 1 min 43 s;
+the flash-drive image and the adb key kept. From Linux (`mu5358-update apply`, the release served to the device over
+the USB link from the Mac - `MU5358_RELEASE_URL`/`MU5358_API_URL` - so the SIM carried nothing): the self-update
+handover to the release's own updater, the download and signature, the carry with the manifest (549 files, the
+device's vendor files and settings), the swap and the boot images with their read-back in 20 s; Android took the
+record and `boot-linux` started the new tree; `rollback` put the previous tree and the previous boot images back
+(verified by a boot); three boots without `boot/ok` made boot/init boot `system.old` (`stage=tree-fallback tries=3`)
+and boot-ok made that permanent (the failed tree kept as `system.failed`, removed by `clean` and the next `apply`).
+What the device taught on the way, each fixed with a test: OpenWrt has no `stat` and no `/dev/block/by-name` (the
+shared boot-image block uses `wc -c`; the updater finds the partitions by their GPT name in sysfs), the GKI kernel
+keeps `androidboot.slot_suffix` in `/proc/bootconfig`, the carry's manifest header names mu300's image
+(`openwrt-luci`), and two releases with the same kernel share `boot_b` byte for byte (so `init_boot_b` tells the
+records apart). A fallback boot runs the previous tree on the newer release's boot images (the ramdisk is
+self-contained); `rollback-boot` puts the previous images back if wanted.
 
 ## Hardware status (2026-10-30)
 
