@@ -24,8 +24,43 @@ the below on the root filesystem (from Android: `customize.sh ROOT /vendor_dlkm/
 | mu5358-cell | S99 | mu300's `mobile-data watch` (redial after two failed checks) |
 | (panel) | - | mu300's LuCI panel as `luci-app-mu5358` (ubus `mu5358dash`), the Aurora theme, ttyd: `http://192.168.58.1/cgi-bin/luci/admin/home`, root's password |
 | mu5358-usb | S99 | re-enumerates the USB gadget (5 s off) while no host has it: not configured, no carrier, or our TX still while the host's packets come in |
+| mu5358-boot-ok | S99 | 30 s into a working system: `boot/ok` and `boot/tries` = 0 on the filesystem (boot/init boots `system.old` after three boots without it); misc is never touched |
+| mu5358-update-notice | S99 | 5 min after boot and every 6 h: `mu5358-update notice` asks GitHub for the newest release (one small API call; `/etc/mu5358/update-check off` stops it) and writes `/run/mu5358/update-available` for the login note, the panel and the screen |
 
-mu300-post is not used: it makes the running slot the default boot (`mu300-next-boot --rearm`).
+mu300-post is not used: it makes the running slot the default boot (`mu300-next-boot --rearm`); mu5358-boot-ok is its
+bootok without the re-arm.
+
+## The filesystem and updates (2026-11-02, W2)
+
+The system lives in one ext4 (the region behind userdata, or fulldumpdb) in mu300's layout: `system/` (the tree),
+`system.old/` (the one before the last update), `data/` (bind-mounted at `/data`: the flash-drive image, the previous
+boot images in `data/prev/`), `boot/` (`tree`: the name of the tree to boot, `tries`, `ok`, `installed`: the record
+of the boot images' hashes that the Android installer and `mu5358-update` share). boot/init mounts the filesystem at
+`/disk`, bind-mounts the tree as the new root (the whole filesystem at `/mnt/mu5358-disk`), adds 1 to `boot/tries`,
+and after three boots without `boot/ok` for that version boots `system.old` (`stage=tree-fallback` in the persistent
+log). An installation from before (the tree at the top) still boots (`stage=tree-flat`) and is moved to the layout
+by its next update from the page (`MU5358-STEP migrate`: renames only, the flash-drive image kept).
+
+Updates run in three ways, all with the settings carried (`/etc`, root's keys, the screen's choices; the installer's
+`CARRY` list and the carry's user-area rule are held equal by a test):
+
+- From the web installer (Android): `mu5358-install.sh update` unpacks the release's `mu5358-system.tar.gz` into
+  `system.new`, puts this device's vendor files and the carried settings in, swaps the trees, writes `boot_b` and
+  `init_boot_b`. The whole filesystem is never written on an update.
+- From inside Linux: `mu5358-update check|apply|rollback|rollback-boot|clean|report|status` (mu300-update's port,
+  `openwrt/update/mu5358-update`: the slot re-arm, the kernel bundles and the misc code are gone). `apply` downloads
+  everything first (SHA256SUMS signed and bound to its tag by the `mu5358-release` line, pinned for the run),
+  unpacks into `system.new`, carries the user's files with `mu5358-carry` (mu300's static tool from the base
+  rootfs; its manifest header keeps mu300's name), swaps, then builds the boot images exactly as the installer does
+  (the shared `bootimg` block; the ramdisk packed LZ4-legacy with the static `lz4` of `tools/lz4/build.sh`, the
+  ramdisk's busybox, misc block and modules published by boot/init at `/run/mu5358/ramdisk`) and writes them with a
+  read-back, the previous ones kept in `data/prev`. Refused off slot b, on a flat installation, and for a downgrade
+  without `--downgrade`. The panel's System > Update page drives the same commands (no kernel chooser, no default-boot
+  switch here).
+- A restart after any update starts Android: Linux is the one-shot trial, and it is started again from the page
+  ("Restart into Linux once"). The page learns a Linux-side update from `boot/installed` before `status` and
+  `boot-linux` (the record is read key by key, never as a file; the filesystem is mounted nosuid,nodev and no link
+  in it is followed).
 
 ## Hardware status (2026-10-30)
 
@@ -136,4 +171,6 @@ mu300-post is not used: it makes the running slot the default boot (`mu300-next-
 - The persistent log: sectors 122152960.. of mmcblk0 (1 MiB; boot/init's kernel log in the first half, mu5358-log's
   snapshots in the second). From Android: `dd if=/dev/block/mmcblk0 bs=512 skip=122152960 count=2048`.
 - LK's log: the uboot_log partition (boot cause: `BootCause is ...`).
+- The tree chosen at boot: `stage=tree-mounted tree=system tries=N`, `stage=tree-fallback ...`, `stage=tree-flat` in the
+  persistent log's stages (W2).
 - A boot that never reaches userspace: sysdumpdb (LK minidump), `tools/sysdumpdb-extract.py`.

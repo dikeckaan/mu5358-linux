@@ -29,17 +29,30 @@ Website: **https://kaandikec.com/mu5358-linux/** (English, Türkçe, 中文)
 
 Suspend and power saving, battery-only (unplugged) operation tested over time,
 Bluetooth, NFC, SIM tray detection, USB OTG host, calls / VoLTE / audio, sending SMS, OpenCL (Android 15's GPU
-driver has none), an installer. A mainline kernel port is started and paused (`mainline/`).
+driver has none). A mainline kernel port is started and paused (`mainline/`).
 
 ## How it boots
 
 1. Android (rooted, Magisk) writes a one-shot "try slot b" request into `misc`.
 2. LK boots slot b: the rebuilt GKI kernel in `boot_b` with our `init_boot_b` ramdisk (`boot/`, `kernel/`).
 3. The ramdisk loads the vendor modules, brings up USB, **puts `misc` back to Android at 1.6 s**, and switches into
-   the OpenWrt root file system that lives on the eMMC behind `userdata`.
+   the system tree (`system/`) on the OpenWrt file system that lives on the eMMC behind `userdata` (or in
+   `fulldumpdb`); after three boots that never reached the boot-ok mark it switches into `system.old`.
 4. Any reboot, power-off, kernel oops (`panic_on_oops=1`) or failed boot lands in Android again.
 
 Slot a and the NV partitions are never written.
+
+## Updating
+
+- From the web installer: connect the phone in Android, pick the release, "Update to ...". The settings, the keys
+  and the USB flash drive's image stay; an installation from before 2026-11-02 is moved into the `system/` layout on
+  the way.
+- From inside Linux: `mu5358-update check` says what is out, `mu5358-update apply` installs it (the previous version
+  kept: `mu5358-update rollback`, `rollback-boot`), or System > Update in the panel. A notice appears at login, on
+  the panel's dashboard and on the screen 5 minutes after boot and every 6 hours (`/etc/mu5358/update-check off`
+  turns the check off).
+- A restart after an update starts Android; start Linux again from the web installer ("Restart into Linux once").
+  See `docs/GKI-SYSTEM.md`, "The filesystem and updates".
 
 ## The repository
 

@@ -37,7 +37,11 @@ adopted under the mu5358 name; no telnet; the rest to be applied):
 10. B3 a safe updater - **done, from Android**: `mu5358-install.sh update` writes the new system over the installed
     one with the settings carried (`CARRY`: uci config, passwords and keys, the SMS pool and traffic ledger, the
     screen's settings, the web server's own key), then `boot_b`/`init_boot_b`; misc never; a downgrade refused.
-    Verified 2026-10-30 (v2026.10.30.5 → .6 with the settings intact). From Linux: still to do
+    Verified 2026-10-30 (v2026.10.30.5 → .6 with the settings intact). **From Linux: done 2026-11-02** (W2,
+    `openwrt/update/mu5358-update`: mu300-update without the slot, misc and kernel-bundle code; the system in
+    `system/` with `system.old` for the rollback, the boot images from the installer's own block, `data/prev` for
+    `rollback-boot`; the panel's System > Update page back; B4 backup and B9 user packages come with the base
+    tree, B10's update notice on u30ui2's System page; the bench trial of the whole chain is the next step)
 11. A5 `mu5358-power` - **charging done 2026-11-01**: `mu5358-charge` (tools/charge) sets the charger's input limit from
     the source through the vendor driver's `registers` attribute (1.5 A, 1.3 A into the battery, as Android; the
     vendor stack alone stayed at 500 mA), with the temperature guard and a charge limit; the power profiles and idle
