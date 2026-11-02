@@ -396,6 +396,9 @@ class Updater(unittest.TestCase):
         self.assertEqual(a.group(0), b.group(0))
         for fn in ('bootimg_put()', 'write_part()', 'u32()', 'be64()', 'fsize()', 'sha()'):
             self.assertIn(fn, a.group(0))
+        # the block runs under Android's toybox and OpenWrt's busybox: no stat (the bench, 2026-11-02: 'stat: not found')
+        self.assertNotIn('stat ', a.group(0))
+        self.assertNotIn('stat -', a.group(0))
 
     def test_the_updater_is_under_the_hard_rules_and_has_no_slot_or_misc_code(self):
         self.assertIn(TOP / 'openwrt/update/mu5358-update', [p for p, _ in shell_scripts()])

@@ -2175,9 +2175,9 @@ boot_pending() {  # the boot images are behind the tree (a run that ended betwee
     [ "$_bp" != "$(head -n 1 "$DISK/system$VERSION_FILE" 2>/dev/null)" ]
 }
 # ---- bootimg begin (shared with openwrt/update/mu5358-update, verbatim: tests/test_update.py) -------------
-fsize() { stat -c %s "$1"; }
+fsize() { wc -c < "$1" | tr -d ' '; }                   # (no stat: OpenWrt's busybox has none; toybox and busybox wc agree)
 sha() { sha256sum "$1" | cut -c1-64; }
-psize() { blockdev --getsize64 "$1" 2>/dev/null || stat -c %s "$1"; }
+psize() { blockdev --getsize64 "$1" 2>/dev/null || fsize "$1"; }
 # ---- bytes -----------------------------------------------------------------------------------------------------
 u32() { dd if="$1" bs=1 skip="$2" count=4 2>/dev/null | od -An -tu4 | tr -d ' '; }    # little endian (arm64)
 u64be() { dd if="$1" bs=1 skip="$2" count=8 2>/dev/null | od -An -tx1 | tr -d ' \n' | sed 's/^/0x/' | xargs printf %d; }
