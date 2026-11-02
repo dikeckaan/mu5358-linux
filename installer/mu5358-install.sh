@@ -240,8 +240,8 @@ status() {
         printf ',"region":{"state":"%s","start":%s,"size":%s},"userdata":{"start":%s,"size":%s,"kernel_size":%s}' \
             $RSTATE $R0 $RSIZE $UD_START $(( (UD_END + 1 - UD_START) * 512 )) $(( $(ud_kernel_sectors) * 512 ))
     fi
-    printf ',"root":"%s","layout":"%s"' "$(installed target)" \
-        "$(_l=$(installed layout); [ -n "$_l" ] && echo "$_l" || { [ -n "$(installed version)" ] && echo flat || echo none; })"
+    printf ',"root":"%s","layout":"%s"' "$(js "$(installed target)")" \
+        "$(js "$(_l=$(installed layout); [ -n "$_l" ] && echo "$_l" || { [ -n "$(installed version)" ] && echo flat || echo none; })")"
     printf ',"installed":"%s","backup":%s,"job":"%s","free_data":%s}\n' "$(js "$(installed version)")" \
         "$([ -f $BACKUP/SHA256SUMS ] && echo true || echo false)" "$_job" \
         "$(df -k /data | awk 'NR == 2 { print $4 * 1024 }')"
@@ -416,6 +416,7 @@ LAYOUT=
 migrate() {
     _m=$1
     [ "$(layout $_m)" = flat ] || return 0
+    for _e in system.migrate system data boot; do [ ! -L $_m/$_e ] || return 1; done
     mkdir -p $_m/system.migrate || return 1
     for _e in $_m/* $_m/.[!.]*; do
         [ -e "$_e" ] || continue
@@ -423,9 +424,9 @@ migrate() {
         mv "$_e" $_m/system.migrate/ || return 1
     done
     mv $_m/system.migrate $_m/system || return 1
-    mkdir -p $_m/data $_m/boot || return 1
-    [ ! -e $_m/system/data/usb-disk.img ] || mv $_m/system/data/usb-disk.img $_m/data/ || return 1
-    echo system > $_m/boot/tree
+    mkdir -p $_m/data $_m/boot && plain_dir $_m/data && plain_dir $_m/boot || return 1
+    [ ! -e $_m/system/data/usb-disk.img ] || [ -L $_m/system/data/usb-disk.img ] || mv $_m/system/data/usb-disk.img $_m/data/ || return 1
+    rm -f $_m/boot/tree && echo system > $_m/boot/tree
     sync
 }
 # the record of what is installed (version, the boot images' hashes) lives twice: $HOME_DIR/installed on Android, and
@@ -443,8 +444,31 @@ fs_mount() {  # fs_mount ro|rw [DIR]: the installed filesystem at DIR ($MNT; FS_
         *) return 1 ;;
     esac
     mkdir -p $FS_MNT && umount $FS_MNT 2>/dev/null
-    _o=rw,noatime; [ "$1" = rw ] || _o=ro,noload
-    mount -t ext4 -o $_o $_src $FS_MNT || { fs_umount; return 1; }
+    # the Linux side is root over its filesystem: nothing of it runs or acts as a device here (nosuid,nodev), and no
+    # link in it is followed by the writes below (plain_dir, plain_file, nosymfollow where this kernel has it)
+    _o=rw,noatime,nosuid,nodev; [ "$1" = rw ] || _o=ro,noload,nosuid,nodev
+    mount -t ext4 -o $_o,nosymfollow $_src $FS_MNT 2>/dev/null || mount -t ext4 -o $_o $_src $FS_MNT || { fs_umount; return 1; }
+}
+plain_dir() { [ -d "$1" ] && [ ! -L "$1" ]; }
+plain_file() { [ -f "$1" ] && [ ! -L "$1" ]; }
+# record_take FILE: the record's known keys with values of the expected shape into $HOME_DIR/installed.new (a record
+# from the Linux side is data, not trusted as a file: no other keys, no other characters)
+record_take() {
+    plain_file "$1" || return 1
+    rm -f $HOME_DIR/installed.new
+    _ok=
+    for _k in version date target boot_b boot_b_head init_boot_b ramdisk layout; do
+        _v=$(sed -n "s/^$_k=//p" "$1" | head -n 1)
+        case $_k in
+            version) echo "$_v" | grep -qE '^v[0-9][0-9A-Za-z._-]{0,40}$' || return 1 ;;
+            date) echo "$_v" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' || return 1 ;;
+            target) case $_v in region|fulldumpdb) ;; *) return 1 ;; esac ;;
+            layout) case $_v in tree|flat|'') ;; *) return 1 ;; esac ;;
+            boot_b|init_boot_b) echo "$_v" | grep -qE '^[0-9a-f]{64}$' || return 1 ;;
+            *) echo "$_v" | grep -qE '^([0-9a-f]{64})?$' || return 1 ;;
+        esac
+        [ -n "$_v" ] && echo "$_k=$_v" >> $HOME_DIR/installed.new
+    done
 }
 fs_umount() { umount $FS_MNT 2>/dev/null; [ -z "$FS_LO" ] || /system/bin/losetup -d $FS_LO 2>/dev/null; FS_LO=; }
 # (status runs while a job may be writing with the filesystem mounted at $MNT: never while a job runs, and at a
@@ -453,16 +477,19 @@ record_sync() {
     [ -f $HOME_DIR/installed ] || return 0
     job_running && return 0
     fs_mount ro $HOME_DIR/mnt-record 2>/dev/null || return 0
-    if [ -s $FS_MNT/boot/installed ] && record_newer "$(sed -n 's/^date=//p' $FS_MNT/boot/installed | head -n1)" "$(installed date)"; then
-        cp $FS_MNT/boot/installed $HOME_DIR/installed.new && mv $HOME_DIR/installed.new $HOME_DIR/installed &&
-            say "the record of the Linux-side update taken: $(installed version)"
+    if plain_dir $FS_MNT/boot && plain_file $FS_MNT/boot/installed && record_take $FS_MNT/boot/installed &&
+        record_newer "$(sed -n 's/^date=//p' $HOME_DIR/installed.new | head -n1)" "$(installed date)"; then
+        mv $HOME_DIR/installed.new $HOME_DIR/installed && say "the record of the Linux-side update taken: $(installed version)"
     fi
+    rm -f $HOME_DIR/installed.new
     fs_umount
     return 0
 }
 record_put() {
     fs_mount rw || { say "cannot mount the system to put the record in"; return 0; }
-    if [ -d $FS_MNT/boot ]; then cp $HOME_DIR/installed $FS_MNT/boot/installed.new && mv $FS_MNT/boot/installed.new $FS_MNT/boot/installed; sync; fi
+    if plain_dir $FS_MNT/boot && [ ! -L $FS_MNT/boot/installed.new ] && [ ! -L $FS_MNT/boot/installed ]; then
+        rm -f $FS_MNT/boot/installed.new && cp $HOME_DIR/installed $FS_MNT/boot/installed.new && mv $FS_MNT/boot/installed.new $FS_MNT/boot/installed; sync
+    else say "boot/installed in the system's filesystem is not a plain file: the record stays on this side"; fi
     fs_umount
     return 0
 }
@@ -481,6 +508,7 @@ update_tree() {
     _need=$(( $(fsize $IN/$F_SYSTEM) / 256 + 65536 ))   # the tree unpacks to about four times the tarball, plus 64 MiB
     _free=$(df -k $MNT | awk 'NR == 2 { print $4 }')
     [ "$_free" -gt "$_need" ] || { fs_umount; die "not enough room in the system's filesystem: $((_need / 1024)) MiB needed, $((_free / 1024)) MiB free (system.old, the previous version, can go from Linux: mu5358-update clean)"; }
+    for _e in system system.new system.old boot data; do [ ! -L $MNT/$_e ] || { fs_umount; die "$_e in the system's filesystem is a link: not touched"; }; done
     rm -rf $MNT/system.new && mkdir $MNT/system.new || { fs_umount; die "system.new"; }
     say "unpacking the tree"
     tar -xzf $IN/$F_SYSTEM -C $MNT/system.new || { rm -rf $MNT/system.new; fs_umount; die "unpacking the tree failed; nothing was changed"; }
@@ -492,7 +520,8 @@ update_tree() {
     rm -rf $MNT/system.old
     mv $MNT/system $MNT/system.old || { fs_umount; die "could not move the old tree aside"; }
     mv $MNT/system.new $MNT/system || { mv $MNT/system.old $MNT/system; fs_umount; die "could not put the new tree in place (the old one is back)"; }
-    mkdir -p $MNT/boot && echo system > $MNT/boot/tree && echo 0 > $MNT/boot/tries && rm -f $MNT/boot/ok
+    mkdir -p $MNT/boot && plain_dir $MNT/boot && rm -f $MNT/boot/tree $MNT/boot/tries $MNT/boot/ok &&
+        echo system > $MNT/boot/tree && echo 0 > $MNT/boot/tries
     LAYOUT=tree
     sync
     say "the tree: $(cat $MNT/system/etc/mu5358/version 2>/dev/null) (the previous one kept as system.old)"

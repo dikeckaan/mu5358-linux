@@ -266,6 +266,19 @@ class MigrateFlat(Busybox):
         self.assertIn('fs_mount ro $HOME_DIR/mnt-record', body)
         self.assertNotIn('$MNT/', body)
 
+    def test_a_record_from_the_linux_side_is_data_not_a_file(self):
+        # only the known keys, each of its shape, into installed.new; a link, a bad hash or a stray key is refused
+        good = 'version=v2026.11.02.2\ndate=2026-11-02T12:00:00Z\ntarget=region\nboot_b=' + 'a' * 64 + '\nboot_b_head=' + 'b' * 64 + \
+               '\ninit_boot_b=' + 'c' * 64 + '\nlayout=tree\nevil=$(reboot)\n'
+        r = self.sh(f'mkdir -p /data/adb/mu5358 && printf \'{good}\' > /tmp/rec && sh {S} _test record_take /tmp/rec; echo "rc=$?"; cat /data/adb/mu5358/installed.new; '
+                    f'ln -s /tmp/rec /tmp/link && sh {S} _test record_take /tmp/link; echo "rc=$?"; '
+                    f'sed "s/^boot_b=.*/boot_b=zz/" /tmp/rec > /tmp/bad && sh {S} _test record_take /tmp/bad; echo "rc=$?"')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        out = r.stdout
+        self.assertIn('rc=0\nversion=v2026.11.02.2\ndate=2026-11-02T12:00:00Z\ntarget=region\n', out)
+        self.assertNotIn('evil', out)
+        self.assertEqual(out.count('rc=1'), 2, out)
+
     def test_the_newer_record_wins(self):
         r = self.sh(f'sh {S} _test record_newer 2026-11-02T10:00:00Z 2026-11-02T09:00:00Z; echo $?; '
                     f'sh {S} _test record_newer 2026-11-02T09:00:00Z 2026-11-02T10:00:00Z; echo $?; sh {S} _test record_newer "" 2026-11-02T10:00:00Z; echo $?')
