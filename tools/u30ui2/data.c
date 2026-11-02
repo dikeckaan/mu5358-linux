@@ -298,6 +298,17 @@ static void collect_stations(struct data *d)
 }
 
 /* --- every 30 s: the configuration (uci), the radio (iw), the traffic totals */
+/* the update notice (mu5358-update notice, 5 min after boot and every 6 h): "mu5358-linux TAG is out (this is ...)" */
+static void collect_update(struct data *d)
+{
+	char line[160];
+
+	reads("/run/mu5358/update-available", line, sizeof(line));
+	d->update[0] = 0;
+	if (sscanf(line, "mu5358-linux %23s is out", d->update) != 1 || d->update[0] != 'v')
+		d->update[0] = 0;
+}
+
 static void collect_slow(struct data *d)
 {
 	char b[256];
@@ -485,6 +496,7 @@ static void *collector(void *arg)
 		}
 		if (t - last_slow >= 30) {
 			collect_slow(&local);
+			collect_update(&local);
 			last_slow = t;
 		}
 		/* what is there now, before the modem and the SIM, which take seconds */

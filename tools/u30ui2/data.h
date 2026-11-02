@@ -53,7 +53,7 @@ struct data {
 	long mem_free_mb, mem_total_mb, disk_free_mb, uptime_s;
 	double load1, load5;
 	int temp_soc, temp_wcn, temp_pa, temp_bat;	/* degrees C, -1000 unknown */
-	char kernel[40], version[24];
+	char kernel[40], version[24], update[24];   /* update: the newer release mu5358-update noticed, or "" */
 	int usb_storage;	/* /etc/mu5358/usb-storage says on: the device is a USB flash drive for the computer */
 	/* the log, newest last */
 	int nlog;

@@ -77,6 +77,7 @@ enum { L_EN, L_TR, L_ZH, NLANG };
 	X(S_PA, "RF amp", "RF yükselteç", "射频功放") \
 	X(S_KERNEL, "Kernel", "Çekirdek", "内核") \
 	X(S_VERSION, "Version", "Sürüm", "版本") \
+	X(S_UPDATE_OUT, "Update %s is out", "Güncelleme %s çıktı", "有更新 %s") \
 	X(S_LANGUAGE, "Language", "Dil", "语言") \
 	X(S_SCREEN_OFF, "Screen off", "Ekran kapanma", "息屏") \
 	X(S_NEVER, "Never", "Hiç", "从不") \

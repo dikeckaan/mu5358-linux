@@ -624,8 +624,15 @@ static void draw_system(void)
 	duration(S.uptime_s, c);
 	snprintf(b, sizeof(b), "%.2f · %s", S.load1, c);
 	row(192, T(S_LOAD), b, K_FG);
-	snprintf(b, sizeof(b), "%s · %s", S.version, S.kernel);
-	text_fit(FONT_REGULAR, 7, 120, TOP(206, 7), ALIGN_CENTER, K_DIM2, b, 150);
+	if (S.update[0]) {
+		/* a newer release is out (the notice mu5358-update writes): instead of the kernel, in the warning colour */
+		snprintf(c, sizeof(c), T(S_UPDATE_OUT), S.update);
+		snprintf(b, sizeof(b), "%s · %s", S.version, c);
+		text_fit(FONT_REGULAR, 7, 120, TOP(206, 7), ALIGN_CENTER, K_WARN, b, 150);
+	} else {
+		snprintf(b, sizeof(b), "%s · %s", S.version, S.kernel);
+		text_fit(FONT_REGULAR, 7, 120, TOP(206, 7), ALIGN_CENTER, K_DIM2, b, 150);
+	}
 }
 
 enum { SET_LANG, SET_TIMEOUT, SET_BRIGHT, SET_LOCK, SET_UI, SET_USB, NSET };

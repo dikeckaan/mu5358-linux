@@ -696,6 +696,18 @@ class Update(unittest.TestCase):
             i = text.index(f'msgid "The device restarts now. The default boot is Android, so it starts Android: {new}"')
             self.assertRegex(text[i:i + 600], r'msgstr "[^"]{10,}"', po)
 
+    def test_the_screen_shows_the_update_badge(self):
+        """u30ui2's System page says when a newer release is out (the notice file mu5358-update writes): parity B10."""
+        i18n = (TOP / 'tools/u30ui2/i18n.h').read_text(encoding='utf-8')
+        self.assertRegex(i18n, r'X\(S_UPDATE_OUT, "[^"]*%s[^"]*", "[^"]*%s[^"]*", "[^"]*%s[^"]*"\)')
+        data = (TOP / 'tools/u30ui2/data.c').read_text(encoding='utf-8')
+        self.assertIn('/run/mu5358/update-available', data)
+        self.assertIn('mu5358-linux %23s is out', data)
+        self.assertIn('char kernel[40], version[24], update[24];', (TOP / 'tools/u30ui2/data.h').read_text(encoding='utf-8'))
+        ui = (TOP / 'tools/u30ui2/ui.c').read_text(encoding='utf-8')
+        sysp = ui[ui.index('static void draw_system(void)'):]
+        self.assertIn('T(S_UPDATE_OUT)', sysp[:sysp.index('\n}\n')])
+
     def test_the_page_knows_the_new_assets(self):
         gh = (TOP / 'site/assets/web-installer/github.js').read_text(encoding='utf-8')
         for n in ('mu5358-system.tar.gz', 'mu5358-update', 'mu5358-release'):
