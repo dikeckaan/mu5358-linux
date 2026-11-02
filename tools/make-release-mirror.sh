@@ -14,7 +14,7 @@ set -eu
 [ $# = 3 ] || { echo "usage: tools/make-release-mirror.sh RELEASEDIR OUT TAG" >&2; exit 2; }
 SRC=$1; OUT=$2; TAG=$3
 PART_MIB=${MU5358_MIRROR_PART_MIB:-45}
-FILES="SHA256SUMS SHA256SUMS.sig mu5358-openwrt.img.gz mu5358-kernel.Image.gz mu5358-ramdisk.tar.gz mu5358-tools.tar.gz mu5358-install.sh android-files.txt"
+FILES="SHA256SUMS SHA256SUMS.sig mu5358-openwrt.img.gz mu5358-kernel.Image.gz mu5358-ramdisk.tar.gz mu5358-tools.tar.gz mu5358-install.sh android-files.txt mu5358-system.tar.gz mu5358-update mu5358-release"
 case $TAG in v[0-9]*) ;; *) echo "not a release tag: $TAG" >&2; exit 2 ;; esac
 case $TAG in *[!0-9A-Za-z._]*|*..*) echo "not a release tag: $TAG" >&2; exit 2 ;; esac
 case $PART_MIB in ''|*[!0-9]*|0) echo "MU5358_MIRROR_PART_MIB must be a number of MiB" >&2; exit 2 ;; esac

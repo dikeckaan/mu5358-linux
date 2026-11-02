@@ -127,12 +127,13 @@ gh api "repos/$REPO/releases/tags/$TAG" >/dev/null 2>&1 && { echo "$TAG is a rel
 } > "$W/ci/notes.md"
 gh release create "$TAG" --repo "$REPO" --target "$SHA" --title "$TAG" ${PRERELEASE:+--prerelease} --notes-file "$W/ci/notes.md" \
     "$OUT/SHA256SUMS" "$OUT/SHA256SUMS.sig" "$OUT/android-files.txt" "$OUT/mu5358-install.sh" "$OUT/mu5358-kernel.Image.gz" \
-    "$OUT/mu5358-openwrt.img.gz" "$OUT/mu5358-ramdisk.tar.gz" "$OUT/mu5358-tools.tar.gz"
+    "$OUT/mu5358-openwrt.img.gz" "$OUT/mu5358-ramdisk.tar.gz" "$OUT/mu5358-tools.tar.gz" \
+    "$OUT/mu5358-system.tar.gz" "$OUT/mu5358-update" "$OUT/mu5358-release"
 # the assets as GitHub holds them: the digests GitHub computed (what the page pins) must be the files' (GitHub
 # computes them on upload; a few tries in case one is not there yet)
 for try in 1 2 3 4 5 6; do
     gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | "\(.digest // "none")  \(.name)"' | sed 's/^sha256://' > "$W/ci/assets.sums"
-    [ "$(wc -l < "$W/ci/assets.sums")" = 8 ] && ! grep -q '^none' "$W/ci/assets.sums" && break
+    [ "$(wc -l < "$W/ci/assets.sums")" = 11 ] && ! grep -q '^none' "$W/ci/assets.sums" && break
     sleep 10
 done
 (cd "$OUT" && sha256sum -c - --quiet < "$W/ci/assets.sums") || { echo "the assets on GitHub are not the files built" >&2; cat "$W/ci/assets.sums"; exit 1; }

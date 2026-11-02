@@ -607,3 +607,41 @@ class ReleaseWorkflow(unittest.TestCase):
         self.assertIn('kernel/Module.symvers', self.ci)
         self.assertIn('MU5358_REQUIRE_SIGNATURE=1', self.ci)
         self.assertLess(self.ci.rindex('gh release create'), self.ci.rindex('tools/publish-mirror.sh'))
+
+
+class Update(unittest.TestCase):
+    """W2 (docs/superpowers/plans/2026-11-02-updater-from-linux.md): the release carries the system tree
+    (mu5358-system.tar.gz), the Linux-side updater (mu5358-update) and the tag-binding line (mu5358-release = the tag
+    and a newline), the image is built in the system/ data/ boot/ layout with its manifest, and the page and the mirror
+    know the new assets."""
+
+    def test_release_lists_the_tree_the_updater_and_the_tag_line(self):
+        mk = (TOP / 'tools/make-release.sh').read_text(encoding='utf-8')
+        sums = re.search(r'sha256sum ([^\n]*\\\n[^\n]*)', mk).group(1)
+        for n in ('mu5358-system.tar.gz', 'mu5358-update', 'mu5358-release'):
+            self.assertIn(n, sums, f'{n} not in SHA256SUMS')
+        self.assertRegex(mk, r'printf \'%s\\n\' "\$TAG" > "\$OUT/mu5358-release"')
+        ci = (TOP / 'tools/ci-release.sh').read_text(encoding='utf-8')
+        self.assertIn('"$W/ci/assets.sums")" = 11 ]', ci)
+        for n in ('mu5358-system.tar.gz', 'mu5358-update', 'mu5358-release'):
+            self.assertIn(f'"$OUT/{n}"', ci)
+        mirror = (TOP / 'tools/make-release-mirror.sh').read_text(encoding='utf-8')
+        files = re.search(r'^FILES="([^"]*)"', mirror, re.M).group(1).split()
+        for n in ('mu5358-system.tar.gz', 'mu5358-update', 'mu5358-release'):
+            self.assertIn(n, files)
+
+    def test_image_is_built_in_the_layout_with_its_manifest(self):
+        br = (TOP / 'openwrt/build-rootfs.sh').read_text(encoding='utf-8')
+        self.assertIn('mu5358-carry manifest', br)
+        self.assertIn('etc/mu5358/image-manifest.gz', br)
+        self.assertIn('mu5358-system.tar.gz', br)
+        self.assertRegex(br, r'echo system > \$S/boot/tree')
+        self.assertLess(br.index('image-manifest.gz'), br.index('mu5358-system.tar.gz'), 'the manifest is in the tarball')
+        self.assertLess(br.index('mu5358-system.tar.gz'), br.index('mke2fs -q'), 'the tarball is the tree, before the layout move')
+        self.assertRegex(br, r'mke2fs [^\n]*-d \$S ')
+
+    def test_the_page_knows_the_new_assets(self):
+        gh = (TOP / 'site/assets/web-installer/github.js').read_text(encoding='utf-8')
+        for n in ('mu5358-system.tar.gz', 'mu5358-update', 'mu5358-release'):
+            self.assertIn(f'"{n}"', gh)
+        self.assertRegex(gh, r'export const RELEASE_FILES = \[\.\.\.REQUIRED_FILES, F\.tools, F\.system, F\.updater, F\.release\]')

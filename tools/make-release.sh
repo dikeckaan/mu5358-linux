@@ -48,7 +48,7 @@ UID_GID=$(id -u):$(id -g)
 docker run --rm -e GENERIC=1 -e VERSION="$TAG" -e SIZE_MIB=2047 -e IMG_NAME=mu5358-openwrt.img.gz -e GZIP_LEVEL=6 \
     -e HOST_UID="${UID_GID%:*}" -e HOST_GID="${UID_GID#*:}" \
     -v "$PWD":/w -v "$ROOTFS":/in/rootfs.tar.gz:ro -v "$KOUT":/kout:ro mu5358-kbuild bash /w/openwrt/build-rootfs.sh
-mv work/openwrt/mu5358-openwrt.img.gz work/openwrt/mu5358-openwrt.img.gz.image "$OUT/"
+mv work/openwrt/mu5358-openwrt.img.gz work/openwrt/mu5358-openwrt.img.gz.image work/openwrt/mu5358-system.tar.gz "$OUT/"
 
 gzip -9 -n -c "$KOUT/arch/arm64/boot/Image" > "$OUT/mu5358-kernel.Image.gz"
 # the ramdisk's files, root's (the installer runs cpio as root over what it unpacks)
@@ -74,13 +74,17 @@ file installer/gpt-userdata installer/f2fs-shrink | grep -q 'statically linked' 
 if tar --version 2>/dev/null | grep -q GNU; then TAROWN="--owner=0 --group=0 --numeric-owner"; else TAROWN="--uid 0 --gid 0"; fi
 tar $TAROWN -czf "$OUT/mu5358-tools.tar.gz" -C installer gpt-userdata f2fs-shrink
 cp installer/mu5358-install.sh installer/android-files.txt "$OUT/"
+# W2: the Linux-side updater (its self-update handover fetches this asset) and the tag-binding line: SHA256SUMS lists
+# mu5358-release, whose content is the tag and a newline, so a signed SHA256SUMS of another release cannot be replayed
+cp openwrt/update/mu5358-update "$OUT/"
+printf '%s\n' "$TAG" > "$OUT/mu5358-release"
 
 cd "$OUT"
 {
     echo "# version $TAG"
     echo "# image mu5358-openwrt.img.gz $(cat mu5358-openwrt.img.gz.image)"
     sha256sum mu5358-openwrt.img.gz mu5358-kernel.Image.gz mu5358-ramdisk.tar.gz mu5358-tools.tar.gz mu5358-install.sh \
-        android-files.txt
+        android-files.txt mu5358-system.tar.gz mu5358-update mu5358-release
 } > SHA256SUMS
 rm mu5358-openwrt.img.gz.image
 cd - >/dev/null

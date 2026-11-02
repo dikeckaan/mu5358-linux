@@ -10,11 +10,14 @@ export const REPO = "dikeckaan/mu5358-linux";
 export const F = {
   sums: "SHA256SUMS", sig: "SHA256SUMS.sig", image: "mu5358-openwrt.img.gz", kernel: "mu5358-kernel.Image.gz", ramdisk: "mu5358-ramdisk.tar.gz",
   script: "mu5358-install.sh", list: "android-files.txt", tools: "mu5358-tools.tar.gz",
+  // W2 (from the first release of 2026-11-02 on): the system tree an update unpacks, the Linux-side updater, the
+  // tag-binding line (the tag and a newline, listed in SHA256SUMS)
+  system: "mu5358-system.tar.gz", updater: "mu5358-update", release: "mu5358-release",
 };
 // every release has these (SHA256SUMS.sig from v2026.10.30.6 on: a release without it is not offered);
 // mu5358-tools.tar.gz (gpt-userdata, f2fs-shrink: the region) from v2026.10.30.2 on
 export const REQUIRED_FILES = [F.sums, F.sig, F.image, F.kernel, F.ramdisk, F.script, F.list];
-export const RELEASE_FILES = [...REQUIRED_FILES, F.tools];
+export const RELEASE_FILES = [...REQUIRED_FILES, F.tools, F.system, F.updater, F.release];
 // the files of this release the page needs: the required ones, and the tools when the release has them
 export const filesOf = (rel) => RELEASE_FILES.filter((n) => REQUIRED_FILES.includes(n) || rel.assets.has(n));
 

@@ -65,11 +65,27 @@ else
     echo "no work/android-subset: the image has no modem chroot (modem/README.md)"
 fi
 
+# the tree's manifest (W2: what the carry of an update compares the user's files against - every file of the release
+# with its mode, owner, size and hash; mu300's format, the image name kept as openwrt-luci so the base tree's carry
+# classes apply unchanged) and the tree as a tarball: the updater (mu5358-update) and the installer's update unpack
+# it into system.new. The manifest leaves itself out; the tarball holds it.
+[ -x $R/opt/mu5358/bin/mu5358-carry ] || { echo "no mu5358-carry in the tree (the base rootfs carries mu300-carry)" >&2; exit 1; }
+$R/opt/mu5358/bin/mu5358-carry manifest $R openwrt-luci "${VERSION:-unversioned}" | gzip -9n > $R/etc/mu5358/image-manifest.gz
+[ -s $R/etc/mu5358/image-manifest.gz ] || { echo "the manifest was not written" >&2; exit 1; }
+tar --numeric-owner --owner=0 --group=0 --sort=name --mtime=@0 -C $R -czf $OUT/mu5358-system.tar.gz .
+echo "tree: $(du -m $OUT/mu5358-system.tar.gz | cut -f1) MiB gzipped, $(zcat $R/etc/mu5358/image-manifest.gz | wc -l) manifest lines"
+
+# the layout (docs/superpowers/plans/2026-11-02-updater-from-linux.md): the tree is system/, data/ persists across
+# updates (bind-mounted at /data), boot/tree names the tree to boot; boot/init falls back to system.old
+S=/build/stage
+rm -rf $S && mkdir -p $S/data $S/boot
+mv $R $S/system
+echo system > $S/boot/tree
 size=${SIZE_MIB:-27808}
 img=/build/mu5358root.img
 gz=$OUT/${IMG_NAME:-mu5358root.img.gz}
 rm -f $img $gz
-mke2fs -q -t ext4 -L mu5358root -O ^metadata_csum_seed -E root_owner=0:0,lazy_itable_init=0 -d $R $img ${size}M
+mke2fs -q -t ext4 -L mu5358root -O ^metadata_csum_seed -E root_owner=0:0,lazy_itable_init=0 -d $S $img ${size}M
 e2fsck -fn $img >/dev/null
 gzip -${GZIP_LEVEL:-1} -n -c $img > $gz
 echo "image: ${size} MiB, $(du -m $gz | cut -f1) MiB gzipped, sha256 $(sha256sum < $img | cut -c1-64)"

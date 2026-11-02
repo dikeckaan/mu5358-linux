@@ -156,6 +156,6 @@ class Mirror(unittest.TestCase):
     def test_make_release_mirror_names_the_release_files(self):
         script = (TOP / 'tools/make-release-mirror.sh').read_text(encoding='utf-8')
         github = (WI / 'github.js').read_text(encoding='utf-8')
-        names = re.findall(r'"([A-Za-z0-9._-]+\.(?:gz|sh|txt|sig)|SHA256SUMS)"', github[github.index('export const F = {'):github.index('};', github.index('export const F = {'))])
+        names = re.findall(r'"([A-Za-z0-9._-]+)"', github[github.index('export const F = {'):github.index('};', github.index('export const F = {'))])
         files = re.search(r'^FILES="([^"]+)"', script, re.M).group(1).split()
         self.assertEqual(sorted(files), sorted(set(names)))
