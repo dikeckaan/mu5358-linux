@@ -2152,6 +2152,16 @@ apply_one() {  # apply_one OS TAG
 BOOTDIR=$DISK/boot
 PREV=$DISK/data/prev
 BYNAME=${MU5358_BYNAME:-/dev/block/by-name}
+SYSBLOCK=${MU5358_SYSBLOCK:-/sys/class/block}
+# part_dev NAME: the partition's device - Android's by-name link when there is one, else by its GPT name in sysfs
+# (OpenWrt has no /dev/block/by-name; boot/init finds its partitions the same way)
+part_dev() {
+    [ ! -e "$BYNAME/$1" ] || { echo "$BYNAME/$1"; return 0; }
+    for _pd in "$SYSBLOCK"/mmcblk0p*; do
+        [ "$(sed -n 's/^PARTNAME=//p' "$_pd/uevent" 2>/dev/null)" = "$1" ] && { echo "/dev/${_pd##*/}"; return 0; }
+    done
+    return 1
+}
 RD=${MU5358_RAMDISK:-/run/mu5358/ramdisk}
 CMDLINE=${MU5358_CMDLINE:-/proc/cmdline}
 BOOTCONFIG=${MU5358_BOOTCONFIG:-/proc/bootconfig}   # the GKI kernel keeps androidboot.* here, not on the command line
@@ -2223,8 +2233,10 @@ boot_update() {  # boot_update TAG: the kernel and ramdisk of the release (fetch
     say "the boot images of $1"
     _bw=$STAGE/boot
     rm -rf "$_bw" && mkdir -p "$_bw/rd/mu/modules" "$_bw/rd/dev" || return 1
-    dd if="$BYNAME/boot_a" of="$_bw/boot_a.img" bs=1048576 2>/dev/null &&
-        dd if="$BYNAME/init_boot_a" of="$_bw/init_boot_a.img" bs=1048576 2>/dev/null || { echo "cannot read slot a" >&2; return 1; }
+    _pa=$(part_dev boot_a) && _pia=$(part_dev init_boot_a) && _pb=$(part_dev boot_b) && _pib=$(part_dev init_boot_b) ||
+        { echo "the boot partitions were not found (by-name, PARTNAME)" >&2; return 1; }
+    dd if="$_pa" of="$_bw/boot_a.img" bs=1048576 2>/dev/null &&
+        dd if="$_pia" of="$_bw/init_boot_a.img" bs=1048576 2>/dev/null || { echo "cannot read slot a" >&2; return 1; }
     gzip -dc "$STAGE/mu5358-kernel.Image.gz" > "$_bw/Image" || { echo "kernel" >&2; return 1; }
     [ "$(dd if="$_bw/Image" bs=1 skip=56 count=4 2>/dev/null | hex)" = 41524d64 ] || { echo "not an arm64 kernel" >&2; return 1; }
     bootimg_put "$_bw/boot_a.img" "$_bw/Image" kernel "$_bw/boot.img" || return 1
@@ -2244,15 +2256,16 @@ boot_update() {  # boot_update TAG: the kernel and ramdisk of the release (fetch
     # what is there now goes to data/prev with its record, before anything is written
     mkdir -p "$PREV" || return 1
     for _p in boot_b init_boot_b; do
-        dd if="$BYNAME/$_p" of="$PREV/$_p.img.new" bs=1048576 2>/dev/null || { echo "cannot read $_p" >&2; return 1; }
-        [ "$(sha "$PREV/$_p.img.new")" = "$(head -c "$(fsize "$PREV/$_p.img.new")" "$BYNAME/$_p" | sha256sum | cut -c1-64)" ] ||
+        _pp=$(part_dev $_p)
+        dd if="$_pp" of="$PREV/$_p.img.new" bs=1048576 2>/dev/null || { echo "cannot read $_p" >&2; return 1; }
+        [ "$(sha "$PREV/$_p.img.new")" = "$(head -c "$(fsize "$PREV/$_p.img.new")" "$_pp" | sha256sum | cut -c1-64)" ] ||
             { echo "prev/$_p.img: read back differs" >&2; return 1; }
         mv "$PREV/$_p.img.new" "$PREV/$_p.img" || return 1
     done
     if [ -f "$BOOTDIR/installed" ]; then cp "$BOOTDIR/installed" "$PREV/installed"; else rm -f "$PREV/installed"; fi
     sync
-    write_part "$_bw/boot.img" "$BYNAME/boot_b" || return 1
-    write_part "$_bw/init_boot.img" "$BYNAME/init_boot_b" || return 1
+    write_part "$_bw/boot.img" "$_pb" || return 1
+    write_part "$_bw/init_boot.img" "$_pib" || return 1
     { echo "version=$1"; echo "date=$(date -u +%FT%TZ)"; echo "target=$(root_layout)"; echo "boot_b=$(sha "$_bw/boot.img")"
       echo "boot_b_head=$(head -c 1048576 "$_bw/boot.img" | sha256sum | cut -c1-64)"; echo "init_boot_b=$(sha "$_bw/init_boot.img")"
       echo "ramdisk=$(sha "$STAGE/mu5358-ramdisk.tar.gz")"; echo "layout=tree"; } > "$BOOTDIR/installed.new" &&
@@ -2264,8 +2277,9 @@ boot_update() {  # boot_update TAG: the kernel and ramdisk of the release (fetch
 rollback_boot() {
     mounted_disk
     [ -s "$PREV/boot_b.img" ] && [ -s "$PREV/init_boot_b.img" ] || die "no previous boot images are kept (data/prev)"
-    write_part "$PREV/boot_b.img" "$BYNAME/boot_b" || die "boot_b"
-    write_part "$PREV/init_boot_b.img" "$BYNAME/init_boot_b" || die "init_boot_b"
+    _pb=$(part_dev boot_b) && _pib=$(part_dev init_boot_b) || die "the boot partitions were not found (by-name, PARTNAME)"
+    write_part "$PREV/boot_b.img" "$_pb" || die "boot_b"
+    write_part "$PREV/init_boot_b.img" "$_pib" || die "init_boot_b"
     if [ -f "$PREV/installed" ]; then mv "$PREV/installed" "$BOOTDIR/installed"; else rm -f "$BOOTDIR/installed"; fi
     rm -f "$PREV/boot_b.img" "$PREV/init_boot_b.img"
     sync

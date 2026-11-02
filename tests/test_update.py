@@ -349,6 +349,13 @@ class Updater(unittest.TestCase):
         self.assertEqual(self.installed('version'), T2)
         self.assertIn(f'KERNEL-{T2}'.encode(), (self.t / 'parts/boot_b').read_bytes())
 
+    def test_partitions_are_found_by_their_gpt_name_without_by_name(self):
+        # the bench (2026-11-02): OpenWrt has no /dev/block/by-name (Android's udev makes it); "cannot read slot a"
+        r = self.sh('mkdir -p /t/sys/mmcblk0p7 /t/sys/mmcblk0p9 && echo "PARTNAME=boot_a" > /t/sys/mmcblk0p7/uevent && printf "MAJOR=179\\nPARTNAME=boot_b\\n" > /t/sys/mmcblk0p9/uevent; '
+                    'MU5358_LIB=1 . $S; MU5358_BYNAME=/nonexistent MU5358_SYSBLOCK=/t/sys; BYNAME=/nonexistent SYSBLOCK=/t/sys; part_dev boot_b; part_dev boot_a; part_dev init_boot_b; echo "rc=$?"; '
+                    'BYNAME=/t/parts; part_dev boot_b')
+        self.assertEqual(r.stdout.split(), ['/dev/mmcblk0p9', '/dev/mmcblk0p7', 'rc=1', '/t/parts/boot_b'], r.stdout + r.stderr)
+
     def test_status_json(self):
         r = self.sh('sh $S status')
         self.assertEqual(r.returncode, 0, r.stderr)
