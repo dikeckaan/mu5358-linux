@@ -235,6 +235,14 @@ class MigrateFlat(Busybox):
         self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
         self.assertEqual(r.stdout.split(), ['boot', 'data', 'lost+found', 'system', 'system', 'v1', 'IMG', 'system/.hidden'])
 
+    def test_dangling_links_move_too(self):
+        # the bench (2026-11-02, v2026.11.01.5 -> .02.1): var -> tmp and lib64 -> lib dangle once tmp and lib have
+        # moved, [ -e ] skipped them, and the old tree's two links stayed at the top of the filesystem
+        r = self.sh('mkdir -p /tmp/m/sbin /tmp/m/tmp /tmp/m/lib && : > /tmp/m/sbin/init && ln -s tmp /tmp/m/var && ln -s lib /tmp/m/lib64 && '
+                    f'sh {S} _test migrate /tmp/m && cd /tmp/m && ls -A && ls system')
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        self.assertEqual(r.stdout.split(), ['boot', 'data', 'system', 'lib', 'lib64', 'sbin', 'tmp', 'var'])
+
     def test_an_interrupted_migration_resumes(self):
         # review #5: a power cut mid-way left neither a flat tree nor system/; migrate carries on from system.migrate
         r = self.sh('mkdir -p /tmp/m/system.migrate/etc /tmp/m/sbin /tmp/m/usr /tmp/m/lost+found && : > /tmp/m/sbin/init && : > /tmp/m/usr/x && '

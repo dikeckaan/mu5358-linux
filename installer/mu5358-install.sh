@@ -424,7 +424,8 @@ migrate() {
     for _e in system.migrate system data boot; do [ ! -L $_m/$_e ] || return 1; done
     mkdir -p $_m/system.migrate || return 1
     for _e in $_m/* $_m/.[!.]*; do
-        [ -e "$_e" ] || continue
+        # (-L too: var -> tmp and lib64 -> lib dangle once their targets have moved, and they belong to the tree)
+        [ -e "$_e" ] || [ -L "$_e" ] || continue
         case ${_e##*/} in lost+found|system.migrate|data|boot) continue ;; esac
         mv "$_e" $_m/system.migrate/ || return 1
     done
