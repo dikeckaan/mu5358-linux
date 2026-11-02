@@ -1,0 +1,11 @@
+#!/bin/sh /etc/rc.common
+# U30 Pro: the update notice timer (/opt/mu5358/bin/mu5358-update-notice): 5 min after boot, then every 6 h.
+START=99
+USE_PROCD=1
+
+start_service() {
+	procd_open_instance notice
+	procd_set_param command /opt/mu5358/bin/mu5358-update-notice
+	procd_set_param respawn 3600 60 0
+	procd_close_instance
+}

@@ -640,6 +640,16 @@ class Update(unittest.TestCase):
         self.assertLess(br.index('mu5358-system.tar.gz'), br.index('mke2fs -q'), 'the tarball is the tree, before the layout move')
         self.assertRegex(br, r'mke2fs [^\n]*-d \$S ')
 
+    def test_customize_installs_boot_ok_and_the_notice_timer_and_carries_update_check(self):
+        c = (TOP / 'openwrt/customize.sh').read_text(encoding='utf-8')
+        self.assertIn('for n in mu5358-boot-ok mu5358-update-notice; do', c)
+        self.assertIn('"$R/etc/rc.d/S99$n"', c)
+        self.assertIn('"$R/opt/mu5358/bin/$n"', c)
+        self.assertIn('"$R/etc/mu5358/update-check"', c)
+        src = (TOP / 'installer/mu5358-install.sh').read_text(encoding='utf-8')
+        carry = re.search(r'^CARRY="([^"]*)"', src, re.M).group(1).split()
+        self.assertIn('etc/mu5358/update-check', carry)
+
     def test_the_page_knows_the_new_assets(self):
         gh = (TOP / 'site/assets/web-installer/github.js').read_text(encoding='utf-8')
         for n in ('mu5358-system.tar.gz', 'mu5358-update', 'mu5358-release'):

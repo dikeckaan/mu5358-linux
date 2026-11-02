@@ -1,0 +1,11 @@
+#!/bin/sh /etc/rc.common
+# U30 Pro: a boot that got this far is good - boot/ok and boot/tries on the filesystem (/opt/mu5358/bin/mu5358-boot-ok,
+# 30 s after start). Late (S99): after the network and the panel.
+START=99
+USE_PROCD=1
+
+start_service() {
+	procd_open_instance bootok
+	procd_set_param command /opt/mu5358/bin/mu5358-boot-ok
+	procd_close_instance
+}

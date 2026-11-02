@@ -315,6 +315,17 @@ ln -sf ../init.d/mu5358-log "$R/etc/rc.d/S13mu5358-log"
 # again: the board ran on (Wi-Fi, wan) with no USB until a forced power-off. This one keeps trying, with growing gaps.
 mkdir -p "$R/opt/mu5358/bin"
 cp "$U/usb-watch" "$R/opt/mu5358/bin/usb-watch" || { echo "no openwrt/usb/usb-watch" >&2; exit 1; }
+# W2 (openwrt/update, docs/superpowers/plans/2026-11-02-updater-from-linux.md): boot-ok (boot/ok and boot/tries on
+# the filesystem: boot/init falls back to system.old after three boots without it) and the update notice timer; the
+# check is on by default, /etc/mu5358/update-check "off" turns it off (carried across updates, CARRY)
+UP=$(cd "$(dirname "$0")" && pwd)/update
+for n in mu5358-boot-ok mu5358-update-notice; do
+    cp "$UP/$n" "$R/opt/mu5358/bin/$n" || { echo "no openwrt/update/$n" >&2; exit 1; }
+    chmod 755 "$R/opt/mu5358/bin/$n"
+    cp "$UP/$n.init" "$R/etc/init.d/$n" && chmod 755 "$R/etc/init.d/$n"
+    ln -sf "../init.d/$n" "$R/etc/rc.d/S99$n"
+done
+[ -e "$R/etc/mu5358/update-check" ] || echo on > "$R/etc/mu5358/update-check"
 chmod 755 "$R/opt/mu5358/bin/usb-watch"
 cat > "$R/etc/init.d/mu5358-usb" <<'EOF'
 #!/bin/sh /etc/rc.common

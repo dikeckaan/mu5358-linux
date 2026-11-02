@@ -1,0 +1,13 @@
+#!/bin/sh
+# A boot that reached here is good (W2, docs/superpowers/plans/2026-11-02-updater-from-linux.md): boot/ok on the
+# filesystem names this system's version and boot/tries goes back to 0, so boot/init keeps booting this tree. Run by
+# mu5358-boot-ok (S99) 30 s after the services are up - mu300's boot-ok without the slot re-arm (misc is never
+# written here: Linux stays the one-shot trial). A flat installation has no boot/ and nothing is written.
+D=${MU5358_DISK:-/mnt/mu5358-disk}
+V=$(head -n 1 "${MU5358_ETC:-/etc/mu5358}/version" 2>/dev/null)
+sleep "${MU5358_BOOT_OK_DELAY:-30}"
+[ -d "$D/boot" ] || exit 0
+[ -n "$V" ] || V=unknown
+printf '%s\n' "$V" > "$D/boot/ok.new" && mv "$D/boot/ok.new" "$D/boot/ok" && echo 0 > "$D/boot/tries" && sync ||
+    { logger -t mu5358-boot-ok "could not write $D/boot/ok"; exit 1; }
+logger -t mu5358-boot-ok "boot ok: $V (tries 0)"

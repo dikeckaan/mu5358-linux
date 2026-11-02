@@ -1,0 +1,12 @@
+#!/bin/sh
+# The update notice (W2): 5 min after boot, then every 6 h (an hour after a failed try), "mu5358-update notice" asks
+# GitHub for the newest release (one small API call) and writes /run/mu5358/update-available when there is one - the
+# login note, the panel's dashboard and the screen show it. Nothing is installed by this. /etc/mu5358/update-check
+# "off" (carried across updates) ends the loop at once; on by default (the maintainer's call, 2026-11-01).
+E=${MU5358_ETC:-/etc/mu5358}
+U=${MU5358_UPDATE:-mu5358-update}
+sleep "${MU5358_NOTICE_DELAY:-300}"
+while :; do
+    [ "$(head -n 1 "$E/update-check" 2>/dev/null)" != off ] || exit 0
+    if "$U" notice >/dev/null 2>&1; then sleep 21600; else sleep 3600; fi
+done
