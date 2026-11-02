@@ -4341,3 +4341,6 @@ msgstr "USB 适配器没有给出有效回复"
 
 msgid "The size must be at least 64 MiB"
 msgstr "大小至少为 64 MiB"
+
+msgid "The device restarts now. The default boot is Android, so it starts Android: start Linux again from the web installer (Restart into Linux once) to run the updated system."
+msgstr "设备现在重启。默认启动的是 Android，所以会进入 Android：请从网页安装器再次启动 Linux（重启进入 Linux 一次）以运行更新后的系统。"

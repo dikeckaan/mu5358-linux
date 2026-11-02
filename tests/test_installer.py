@@ -272,12 +272,14 @@ class MigrateFlat(Busybox):
                '\ninit_boot_b=' + 'c' * 64 + '\nlayout=tree\nevil=$(reboot)\n'
         r = self.sh(f'mkdir -p /data/adb/mu5358 && printf \'{good}\' > /tmp/rec && sh {S} _test record_take /tmp/rec; echo "rc=$?"; cat /data/adb/mu5358/installed.new; '
                     f'ln -s /tmp/rec /tmp/link && sh {S} _test record_take /tmp/link; echo "rc=$?"; '
-                    f'sed "s/^boot_b=.*/boot_b=zz/" /tmp/rec > /tmp/bad && sh {S} _test record_take /tmp/bad; echo "rc=$?"')
+                    f'sed "s/^boot_b=.*/boot_b=zz/" /tmp/rec > /tmp/bad && sh {S} _test record_take /tmp/bad; echo "rc=$?"; '
+                    f'cp /tmp/rec /tmp/bs && printf "%s\\n" \'ramdisk=\\x41dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\' >> /tmp/bs && sh {S} _test record_take /tmp/bs; echo "rc=$?"')
         self.assertEqual(r.returncode, 0, r.stderr)
         out = r.stdout
         self.assertIn('rc=0\nversion=v2026.11.02.2\ndate=2026-11-02T12:00:00Z\ntarget=region\n', out)
         self.assertNotIn('evil', out)
-        self.assertEqual(out.count('rc=1'), 2, out)
+        self.assertEqual(out.count('rc=1'), 3, out)
+        self.assertNotIn('ramdisk=', out, 'a backslash in a value is refused, not read by echo')
 
     def test_the_newer_record_wins(self):
         r = self.sh(f'sh {S} _test record_newer 2026-11-02T10:00:00Z 2026-11-02T09:00:00Z; echo $?; '

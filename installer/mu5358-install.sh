@@ -459,15 +459,17 @@ record_take() {
     _ok=
     for _k in version date target boot_b boot_b_head init_boot_b ramdisk layout; do
         _v=$(sed -n "s/^$_k=//p" "$1" | head -n 1)
+        # (the raw value through printf, never echo - mksh's echo reads backslashes; nothing but the shape's characters)
+        case $_v in *[![:alnum:]._:-]*) return 1 ;; esac
         case $_k in
-            version) echo "$_v" | grep -qE '^v[0-9][0-9A-Za-z._-]{0,40}$' || return 1 ;;
-            date) echo "$_v" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' || return 1 ;;
+            version) printf '%s\n' "$_v" | grep -qxE 'v[0-9][0-9A-Za-z._-]{0,40}' || return 1 ;;
+            date) printf '%s\n' "$_v" | grep -qxE '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z' || return 1 ;;
             target) case $_v in region|fulldumpdb) ;; *) return 1 ;; esac ;;
             layout) case $_v in tree|flat|'') ;; *) return 1 ;; esac ;;
-            boot_b|init_boot_b) echo "$_v" | grep -qE '^[0-9a-f]{64}$' || return 1 ;;
-            *) echo "$_v" | grep -qE '^([0-9a-f]{64})?$' || return 1 ;;
+            boot_b|init_boot_b) printf '%s\n' "$_v" | grep -qxE '[0-9a-f]{64}' || return 1 ;;
+            *) printf '%s\n' "$_v" | grep -qxE '([0-9a-f]{64})?' || return 1 ;;
         esac
-        [ -n "$_v" ] && echo "$_k=$_v" >> $HOME_DIR/installed.new
+        [ -n "$_v" ] && printf '%s=%s\n' "$_k" "$_v" >> $HOME_DIR/installed.new
     done
 }
 fs_umount() { umount $FS_MNT 2>/dev/null; [ -z "$FS_LO" ] || /system/bin/losetup -d $FS_LO 2>/dev/null; FS_LO=; }

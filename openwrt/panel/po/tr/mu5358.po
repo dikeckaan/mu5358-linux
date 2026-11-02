@@ -4355,3 +4355,6 @@ msgstr "USB adaptörü geçerli bir yanıt vermedi"
 
 msgid "The size must be at least 64 MiB"
 msgstr "Boyut en az 64 MiB olmalı"
+
+msgid "The device restarts now. The default boot is Android, so it starts Android: start Linux again from the web installer (Restart into Linux once) to run the updated system."
+msgstr "Cihaz şimdi yeniden başlıyor. Varsayılan açılış Android olduğu için Android açılır: güncellenen sistemi çalıştırmak için Linux'u web kurucudan yeniden başlatın (Linux'a bir kez yeniden başlat)."

@@ -532,16 +532,36 @@ EOF
 fi
 
 # The control panel (luci-app-mu5358, mu300's for the F50 / U30 Air / V50) on this board (2026-10-30). The pages that
-# cannot apply go out of the menu: Dual SIM (one slot here; SIM settings stays), LEDs (none), Update (mu5358-update
-# is rebrand.sh's refusing stub: updates are done from Android with the web installer). The views and the ACLs stay;
+# cannot apply go out of the menu: Dual SIM (one slot here; SIM settings stays), LEDs (none). Update is back since
+# W2 (2026-11-02: mu5358-update updates from inside Linux; the page is patched below). The views and the ACLs stay;
 # an entry is the block from its key line to the next "}," line.
 f="$R/usr/share/luci/menu.d/luci-app-mu5358.json"
 [ -f "$f" ] || { echo "$f: no panel menu (not the openwrt-luci tree?)" >&2; exit 1; }
-for k in admin/modem/sim admin/system/mu5358-leds admin/system/mu5358-update; do
+for k in admin/modem/sim admin/system/mu5358-leds; do
     grep -q "^[[:space:]]*\"$k\": {\$" "$f" || continue
     sed -i "\\@^[[:space:]]*\"$k\": {\$@,\\@^[[:space:]]*},\$@d" "$f"
     ! grep -q "\"$k\"" "$f" || { echo "$f: $k is still in the menu" >&2; exit 1; }
 done
+# System > Update (mu300's page and adapter, rebranded; W2): no kernel chooser and no "Start Android at the next
+# restart" (one GKI kernel; Android is the default boot and the trial is one-shot), no Magisk-zip card (a release
+# here is a directory for mu5358-update apply --from), the restart note says where Linux is started again; the
+# adapter learns mu5358-update's stage texts and its record (boot/installed, boot/tree) for "changed".
+f="$R/www/luci-static/resources/view/mu5358/update.js"
+if [ -f "$f" ] && ! grep -q 'mu5358: no kernel card' "$f"; then
+    grep -q '^		cards.push(kc);$' "$f" || { echo "$f: no kernel card line to patch" >&2; exit 1; }
+    sed -i 's|^		cards.push(kc);$|		/* mu5358: no kernel card (one GKI kernel; Android is the default boot, the trial one-shot: customize.sh) */|' "$f"
+    grep -q '^		cards.push(filec);$' "$f" || { echo "$f: no file card line to patch" >&2; exit 1; }
+    sed -i 's|^		cards.push(filec);$|		/* mu5358: no file card (a release here is a directory for mu5358-update apply --from, not a Magisk zip: customize.sh) */|' "$f"
+    grep -q 'switch to Linux from there to start the updated system\.' "$f" || { echo "$f: no restart note to patch" >&2; exit 1; }
+    sed -i 's|switch to Linux from there to start the updated system\.|start Linux again from the web installer (Restart into Linux once) to run the updated system.|' "$f"
+fi
+f="$R/usr/libexec/unisoc-modem/update"
+if [ -f "$f" ] && ! grep -q 'mu5358: stages' "$f"; then
+    grep -q "^        \*': unpacking') echo unpack ;;$" "$f" || { echo "$f: no unpack stage line to patch" >&2; exit 1; }
+    sed -i "s|^        \*': unpacking') echo unpack ;;$|&\n        *': carrying your files over'*) echo keep ;;   # mu5358: stages of mu5358-update (customize.sh)\n        'the boot images of '*) echo boot ;;|" "$f"
+    grep -q '^    for _f in installed.tag installed.id written.sha256 kernel; do ' "$f" || { echo "$f: no fingerprint line to patch" >&2; exit 1; }
+    sed -i 's|^    for _f in installed.tag installed.id written.sha256 kernel; do |    for _f in installed tree; do |' "$f"   # mu5358: the record and the tree marker
+fi
 # The dashboard's boot card: Linux is a one-time trial from slot b and nothing in it can change the boot, so there is
 # no dual boot to switch or lock (no "dualboot" capability: the two buttons go; mu5358-next-boot refuses anyway), the
 # boot adapter answers this board's state (the default boot Android, this boot one-time, the control not writable)

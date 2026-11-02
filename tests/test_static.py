@@ -678,6 +678,24 @@ class Update(unittest.TestCase):
             self.assertTrue(any(p == a or p.startswith(a + '/') for a in area), f'{p} is outside the carry\'s user area')
             self.assertTrue(any(p == k or p.startswith(k + '/') for k in keep), f'{p} is not in keep_list')
 
+    def test_the_panels_update_page_is_back_without_kernel_or_default_boot(self):
+        """System > Update (mu300's page, rebranded) is in the menu again: no kernel chooser, no "Start Android at
+        the next restart", no Magisk-zip card; the adapter knows mu5358-update's stages and its record."""
+        c = (TOP / 'openwrt/customize.sh').read_text(encoding='utf-8')
+        self.assertIn('for k in admin/modem/sim admin/system/mu5358-leds; do', c)
+        self.assertNotIn('admin/system/mu5358-update', c[c.index('for k in admin/modem/sim'):][:200])
+        for anchor in ('cards.push(kc);', 'cards.push(filec);', 'switch to Linux from there to start the updated system',
+                       "*': unpacking') echo unpack ;;", 'for _f in installed.tag installed.id written.sha256 kernel; do'):
+            self.assertIn(anchor, c, anchor)
+        self.assertIn("'the boot images of '*) echo boot ;;", c)
+        self.assertIn("*': carrying your files over'*) echo keep ;;", c)
+        new = 'start Linux again from the web installer (Restart into Linux once) to run the updated system.'
+        self.assertIn(new, c)
+        for po in ('tr', 'zh_Hans'):
+            text = (TOP / f'openwrt/panel/po/{po}/mu5358.po').read_text(encoding='utf-8')
+            i = text.index(f'msgid "The device restarts now. The default boot is Android, so it starts Android: {new}"')
+            self.assertRegex(text[i:i + 600], r'msgstr "[^"]{10,}"', po)
+
     def test_the_page_knows_the_new_assets(self):
         gh = (TOP / 'site/assets/web-installer/github.js').read_text(encoding='utf-8')
         for n in ('mu5358-system.tar.gz', 'mu5358-update', 'mu5358-release'):
