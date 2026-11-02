@@ -326,6 +326,9 @@ for n in mu5358-boot-ok mu5358-update-notice; do
     ln -sf "../init.d/$n" "$R/etc/rc.d/S99$n"
 done
 [ -e "$R/etc/mu5358/update-check" ] || echo on > "$R/etc/mu5358/update-check"
+# the updater itself, over rebrand.sh's refusing stub (mu300-update's port: openwrt/update/mu5358-update)
+cp "$UP/mu5358-update" "$R/opt/mu5358/bin/mu5358-update" || { echo "no openwrt/update/mu5358-update" >&2; exit 1; }
+chmod 755 "$R/opt/mu5358/bin/mu5358-update"
 chmod 755 "$R/opt/mu5358/bin/usb-watch"
 cat > "$R/etc/init.d/mu5358-usb" <<'EOF'
 #!/bin/sh /etc/rc.common
@@ -421,6 +424,8 @@ if [ -f "$M5/u30ui2" ]; then
     chmod 755 "$R/opt/mu5358/bin/u30ui2"
 fi
 [ -n "${VERSION:-}" ] && echo "$VERSION" > "$R/etc/mu5358/version"
+# the same under mu300's name: the updater (mu5358-update, mu300-update's port) and its carry read image-version
+[ -n "${VERSION:-}" ] && echo "$VERSION" > "$R/etc/mu5358/image-version"
 # u30ui turns the picture with the panel's MADCTL through this (tools/spispeed; without it the CPU turns it, and
 # the frames tear)
 M4=$(cd "$(dirname "$0")/.." && pwd)/tools/spispeed

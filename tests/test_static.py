@@ -646,6 +646,7 @@ class Update(unittest.TestCase):
         self.assertIn('"$R/etc/rc.d/S99$n"', c)
         self.assertIn('"$R/opt/mu5358/bin/$n"', c)
         self.assertIn('"$R/etc/mu5358/update-check"', c)
+        self.assertIn('cp "$UP/mu5358-update" "$R/opt/mu5358/bin/mu5358-update"', c)
         src = (TOP / 'installer/mu5358-install.sh').read_text(encoding='utf-8')
         carry = re.search(r'^CARRY="([^"]*)"', src, re.M).group(1).split()
         self.assertIn('etc/mu5358/update-check', carry)

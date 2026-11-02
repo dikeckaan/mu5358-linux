@@ -78,12 +78,12 @@ RD_MODS=sprd_pmic_wdt
 say() { echo "$*"; }
 step() { echo "MU5358-STEP $1"; }
 die() { echo "MU5358-ERROR $*"; exit 1; }
+prop() { getprop "$1" 2>/dev/null; }
 js() { printf %s "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\n\r'; }
+# ---- bootimg begin (shared with openwrt/update/mu5358-update, verbatim: tests/test_update.py) -------------
 fsize() { stat -c %s "$1"; }
 sha() { sha256sum "$1" | cut -c1-64; }
 psize() { blockdev --getsize64 "$1" 2>/dev/null || stat -c %s "$1"; }
-prop() { getprop "$1" 2>/dev/null; }
-
 # ---- bytes -----------------------------------------------------------------------------------------------------
 u32() { dd if="$1" bs=1 skip="$2" count=4 2>/dev/null | od -An -tu4 | tr -d ' '; }    # little endian (arm64)
 u64be() { dd if="$1" bs=1 skip="$2" count=8 2>/dev/null | od -An -tx1 | tr -d ' \n' | sed 's/^/0x/' | xargs printf %d; }
@@ -122,6 +122,15 @@ bootimg_put() {
             put "$_o" $((_t - 64)) &&
         [ "$(fsize "$_o")" = "$_t" ]
 }
+# write_part IMG DEV: IMG onto the start of DEV, read back
+write_part() {
+    _n=$(fsize "$1")
+    [ "$_n" -le "$(psize "$2")" ] || { say "$1 is larger than $2"; return 1; }
+    dd if="$1" of="$2" bs=1048576 conv=fsync 2>/dev/null; sync
+    echo 3 > /proc/sys/vm/drop_caches 2>/dev/null
+    [ "$(head -c "$_n" "$2" | sha256sum | cut -c1-64)" = "$(sha "$1")" ] || { say "$2: read back differs"; return 1; }
+}
+# ---- bootimg end
 
 # ---- misc ------------------------------------------------------------------------------------------------------
 # bootloader_control at 0x800 of misc: 32 bytes, magic BCAB at 4, slot bytes at 12 (a) and 14 (b): priority (0-3) |
@@ -184,14 +193,6 @@ fd_state() {  # fd_state [quick]: quick samples the partition (status, every few
     [ "$(label $_d)" = mu5358root ] && { echo ours; return; }
     [ "$(head -c 1048576 $_d 2>/dev/null | wc -c)" = 1048576 ] || { echo unreadable; return; }
     if [ "${1:-}" = quick ]; then zero_sampled $_d; else zero $_d; fi && echo empty || echo used
-}
-# write_part IMG DEV: IMG onto the start of DEV, read back
-write_part() {
-    _n=$(fsize "$1")
-    [ "$_n" -le "$(psize "$2")" ] || { say "$1 is larger than $2"; return 1; }
-    dd if="$1" of="$2" bs=1048576 conv=fsync 2>/dev/null; sync
-    echo 3 > /proc/sys/vm/drop_caches
-    [ "$(head -c "$_n" "$2" | sha256sum | cut -c1-64)" = "$(sha "$1")" ] || { say "$2: read back differs"; return 1; }
 }
 
 # ---- the region behind userdata ---------------------------------------------------------------------------------
