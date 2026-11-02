@@ -223,6 +223,86 @@ class Layout(Busybox):
         self.assertRegex(src, r'vendor_files \$\(tree_dir \$MNT\)|_t=\$\(tree_dir \$MNT\)')
 
 
+class MigrateFlat(Busybox):
+    """update on a flat installation (before 2026-11-02) moves it to the layout first: everything but lost+found
+    into system/, the flash-drive image into data/, boot/tree; a tree layout is left alone. Then the release's tree
+    is unpacked into system.new and swapped in (update_tree), the record goes into boot/installed (record_put)."""
+
+    def test_flat_becomes_system_with_data_and_boot(self):
+        r = self.sh('mkdir -p /tmp/m/sbin /tmp/m/etc/mu5358 /tmp/m/data /tmp/m/lost+found && : > /tmp/m/sbin/init && '
+                    'echo v1 > /tmp/m/etc/mu5358/version && echo IMG > /tmp/m/data/usb-disk.img && : > /tmp/m/.hidden && '
+                    f'sh {S} _test migrate /tmp/m && cd /tmp/m && ls -A && cat boot/tree && cat system/etc/mu5358/version && cat data/usb-disk.img && ls system/.hidden')
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        self.assertEqual(r.stdout.split(), ['boot', 'data', 'lost+found', 'system', 'system', 'v1', 'IMG', 'system/.hidden'])
+
+    def test_a_tree_layout_is_left_alone(self):
+        r = self.sh('mkdir -p /tmp/m/system/sbin /tmp/m/data && : > /tmp/m/system/sbin/init && echo keep > /tmp/m/data/x && '
+                    f'sh {S} _test migrate /tmp/m && cd /tmp/m && ls -A && cat data/x')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.split(), ['data', 'system', 'keep'])
+
+    def test_update_unpacks_the_tree_and_the_record_goes_into_the_filesystem(self):
+        src = (TOP / 'installer/mu5358-install.sh').read_text(encoding='utf-8')
+        self.assertIn('F_SYSTEM=mu5358-system.tar.gz', src)
+        upd = src[src.index('update() {'):]
+        upd = upd[:upd.index('\n}\n')]
+        self.assertIn('carry_save; chain; update_tree; boot_images; record_put', upd)
+        self.assertNotIn('system;', upd, 'no whole-image write on an update: data/ would go')
+        ut = src[src.index('update_tree() {'):]
+        for s in ('step migrate', 'migrate $MNT', 'step system', '$MNT/system.new', 'mv $MNT/system $MNT/system.old', 'echo system > $MNT/boot/tree'):
+            self.assertIn(s, ut[:ut.index('\n}\n')], s)
+        self.assertLess(ut.index('vendor_files $MNT/system.new'), ut.index('mv $MNT/system $MNT/system.old'))
+        for fn in ('status() {', 'boot_linux() {'):
+            body = src[src.index(fn):]
+            self.assertIn('record_sync', body[:body.index('\n}\n')], fn)
+
+    def test_the_newer_record_wins(self):
+        r = self.sh(f'sh {S} _test record_newer 2026-11-02T10:00:00Z 2026-11-02T09:00:00Z; echo $?; '
+                    f'sh {S} _test record_newer 2026-11-02T09:00:00Z 2026-11-02T10:00:00Z; echo $?; sh {S} _test record_newer "" 2026-11-02T10:00:00Z; echo $?')
+        self.assertEqual(r.stdout.split(), ['0', '1', '1'], r.stderr)
+
+
+class Take(Busybox):
+    """take: the tree tarball (mu5358-system.tar.gz) is taken when the page pushed it, the image when it pushed that;
+    one of the two must be there, and each is checked against SHA256SUMS."""
+
+    def pushed(self, files, sums_extra=''):
+        lines = ['mkdir -p /data/local/tmp/mu5358-web/in /data/adb/mu5358 && cd /data/local/tmp/mu5358-web/in']
+        for n, body in files.items():
+            lines.append(f"printf '%s' '{body}' > {n}")
+        lines.append('printf "gpt\n" > gpt-userdata; printf "shr\n" > f2fs-shrink; tar -czf mu5358-tools.tar.gz gpt-userdata f2fs-shrink; rm gpt-userdata f2fs-shrink')
+        lines.append('{ echo "# version v2026.11.02.1"; sha256sum ' + ' '.join(n for n in files) + ' mu5358-tools.tar.gz; ' + sums_extra + ' } > SHA256SUMS')
+        lines.append(f'sh {S} _test take $(sha256sum SHA256SUMS | cut -c1-64); echo "rc=$?"')
+        return self.sh(' && '.join(lines[:-1]) + '; ' + lines[-1])
+
+    def test_the_tree_alone_is_enough_for_an_update(self):
+        r = self.pushed({'mu5358-kernel.Image.gz': 'K', 'mu5358-ramdisk.tar.gz': 'R', 'mu5358-system.tar.gz': 'T'})
+        self.assertIn('rc=0', r.stdout, r.stdout + r.stderr)
+        self.assertIn('MU5358-INFO mu5358-system.tar.gz ok', r.stdout)
+        self.assertIn('MU5358-TAKEN v2026.11.02.1', r.stdout)
+
+    def test_the_image_alone_is_enough_for_an_install(self):
+        r = self.pushed({'mu5358-kernel.Image.gz': 'K', 'mu5358-ramdisk.tar.gz': 'R', 'mu5358-openwrt.img.gz': 'I'})
+        self.assertIn('rc=0', r.stdout, r.stdout + r.stderr)
+
+    def test_neither_is_refused(self):
+        r = self.pushed({'mu5358-kernel.Image.gz': 'K', 'mu5358-ramdisk.tar.gz': 'R'})
+        self.assertIn('MU5358-ERROR', r.stdout)
+        self.assertNotIn('rc=0', r.stdout)
+
+    def test_a_tree_with_the_wrong_sum_is_refused(self):
+        r = self.pushed({'mu5358-kernel.Image.gz': 'K', 'mu5358-ramdisk.tar.gz': 'R', 'mu5358-system.tar.gz': 'T'},
+                        sums_extra='sed -i "s/  mu5358-system.tar.gz/x mu5358-system.tar.gz/" /dev/null;')
+        # the sum line of the tree altered after the fact
+        r = self.sh('mkdir -p /data/local/tmp/mu5358-web/in /data/adb/mu5358 && cd /data/local/tmp/mu5358-web/in && '
+                    'printf K > mu5358-kernel.Image.gz && printf R > mu5358-ramdisk.tar.gz && printf T > mu5358-system.tar.gz && '
+                    'printf g > gpt-userdata && printf f > f2fs-shrink && tar -czf mu5358-tools.tar.gz gpt-userdata f2fs-shrink && '
+                    '{ echo "# version v1"; sha256sum mu5358-kernel.Image.gz mu5358-ramdisk.tar.gz mu5358-tools.tar.gz; echo "0000000000000000000000000000000000000000000000000000000000000000  mu5358-system.tar.gz"; } > SHA256SUMS && '
+                    f'sh {S} _test take $(sha256sum SHA256SUMS | cut -c1-64); echo "rc=$?"')
+        self.assertIn('checksum differs', r.stdout)
+        self.assertNotIn('rc=0', r.stdout)
+
+
 class Jobs(Busybox):
     def test_a_pid_that_is_not_the_installer_is_no_running_job(self):
         # the pid file outlives a reboot; its number can be another process's by then (the bench, 2026-11-01)

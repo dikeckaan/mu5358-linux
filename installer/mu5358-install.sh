@@ -65,6 +65,7 @@ uboot sml trustos teecfg pm_sys ch_sys l_agdsp nr_modem nr_phy nr_phy_npi logo f
 # the release's files
 F_SUMS=SHA256SUMS F_KERNEL=mu5358-kernel.Image.gz F_RAMDISK=mu5358-ramdisk.tar.gz F_ROOT=mu5358-openwrt.img.gz
 F_TOOLS=mu5358-tools.tar.gz   # gpt-userdata, f2fs-shrink (installer/, static)
+F_SYSTEM=mu5358-system.tar.gz # the tree (W2, releases from 2026-11-02 on): what an update unpacks into system.new
 ROOT_MIB=2047          # the image's filesystem: fulldumpdb less its last MiB (boot/init's persistent log)
 DISK=/dev/block/mmcblk0
 MIN_ANDROID_FREE=$((4 * 1024 * 1024 * 1024))   # what /data keeps free after a shrink
@@ -216,6 +217,7 @@ installed() { [ -f $HOME_DIR/installed ] && sed -n "s/^$1=//p" $HOME_DIR/install
 
 # ---- status ----------------------------------------------------------------------------------------------------
 status() {
+    record_sync
     _bc=$(bc_live)
     _bstate=zero
     if [ -b $BYNAME/boot_b ]; then
@@ -252,12 +254,20 @@ take() {
     _want=${1:?take SUMS_SHA256}
     mkdir -p $IN && chmod 700 $HOME_DIR $IN
     rm -f $IN/*
-    for _f in $F_SUMS $F_KERNEL $F_RAMDISK $F_ROOT $F_TOOLS; do
+    for _f in $F_SUMS $F_KERNEL $F_RAMDISK $F_TOOLS; do
         [ -f "$PUSHED/$_f" ] && [ ! -L "$PUSHED/$_f" ] || die "missing $_f"
         mv "$PUSHED/$_f" "$IN/$_f" || die "cannot take $_f"
     done
+    # the image (an installation) or the tree (an update): the page pushes the one the job needs
+    _got=
+    for _f in $F_ROOT $F_SYSTEM; do
+        [ -f "$PUSHED/$_f" ] && [ ! -L "$PUSHED/$_f" ] || continue
+        mv "$PUSHED/$_f" "$IN/$_f" || die "cannot take $_f"
+        _got="$_got $_f"
+    done
+    [ -n "$_got" ] || die "missing $F_ROOT or $F_SYSTEM"
     [ "$(sha $IN/$F_SUMS)" = "$_want" ] || die "SHA256SUMS is not the release's"
-    for _f in $F_KERNEL $F_RAMDISK $F_ROOT $F_TOOLS; do
+    for _f in $F_KERNEL $F_RAMDISK $F_TOOLS $_got; do
         _s=$(awk -v f="$_f" '$2 == f || $2 == "*" f { print $1 }' $IN/$F_SUMS)
         [ -n "$_s" ] || die "$_f not in SHA256SUMS"
         [ "$(sha "$IN/$_f")" = "$_s" ] || die "$_f: checksum differs"
@@ -400,6 +410,98 @@ chain() {
 tree_dir() { if [ -e "$1/system/sbin/init" ]; then echo "$1/system"; else echo "$1"; fi; }
 layout() { if [ -e "$1/system/sbin/init" ]; then echo tree; elif [ -e "$1/sbin/init" ]; then echo flat; else echo none; fi; }
 LAYOUT=
+# migrate MNT: a flat installation into the layout - everything but lost+found renamed into system/ (the tree keeps
+# booting if this is cut short: boot/init takes a flat filesystem and a system/ alike), the flash-drive image into
+# data/, boot/tree. Nothing is copied: renames within one filesystem. A tree layout is left as it is.
+migrate() {
+    _m=$1
+    [ "$(layout $_m)" = flat ] || return 0
+    mkdir -p $_m/system.migrate || return 1
+    for _e in $_m/* $_m/.[!.]*; do
+        [ -e "$_e" ] || continue
+        case ${_e##*/} in lost+found|system.migrate|data|boot) continue ;; esac
+        mv "$_e" $_m/system.migrate/ || return 1
+    done
+    mv $_m/system.migrate $_m/system || return 1
+    mkdir -p $_m/data $_m/boot || return 1
+    [ ! -e $_m/system/data/usb-disk.img ] || mv $_m/system/data/usb-disk.img $_m/data/ || return 1
+    echo system > $_m/boot/tree
+    sync
+}
+# the record of what is installed (version, the boot images' hashes) lives twice: $HOME_DIR/installed on Android, and
+# boot/installed in the filesystem, which the Linux-side updater (mu5358-update) writes too. The newer wins
+# (record_sync, before status and boot-linux); every installation and update here puts its own in (record_put).
+record_newer() { [ -n "$1" ] && [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort | tail -n 1)" = "$1" ]; }
+fs_mount() {  # fs_mount ro|rw: the installed filesystem at $MNT (FS_LO: the loop device over the region)
+    FS_LO=
+    case $(installed target) in
+        region) region_info && [ "$RSTATE" = ours ] || return 1
+                _ro=; [ "$1" = rw ] || _ro=-r
+                FS_LO=$(/system/bin/losetup -f -s $_ro -o $((R0 * 512)) $DISK 2>/dev/null) && [ -b "$FS_LO" ] || return 1
+                _src=$FS_LO ;;
+        fulldumpdb) _src=$BYNAME/fulldumpdb ;;
+        *) return 1 ;;
+    esac
+    mkdir -p $MNT && umount $MNT 2>/dev/null
+    _o=rw,noatime; [ "$1" = rw ] || _o=ro,noload
+    mount -t ext4 -o $_o $_src $MNT || { fs_umount; return 1; }
+}
+fs_umount() { umount $MNT 2>/dev/null; [ -z "$FS_LO" ] || /system/bin/losetup -d $FS_LO 2>/dev/null; FS_LO=; }
+record_sync() {
+    [ -f $HOME_DIR/installed ] || return 0
+    fs_mount ro 2>/dev/null || return 0
+    if [ -s $MNT/boot/installed ] && record_newer "$(sed -n 's/^date=//p' $MNT/boot/installed | head -n1)" "$(installed date)"; then
+        cp $MNT/boot/installed $HOME_DIR/installed.new && mv $HOME_DIR/installed.new $HOME_DIR/installed &&
+            say "the record of the Linux-side update taken: $(installed version)"
+    fi
+    fs_umount
+    return 0
+}
+record_put() {
+    fs_mount rw || { say "cannot mount the system to put the record in"; return 0; }
+    if [ -d $MNT/boot ]; then cp $HOME_DIR/installed $MNT/boot/installed.new && mv $MNT/boot/installed.new $MNT/boot/installed; sync; fi
+    fs_umount
+    return 0
+}
+# update_tree: the release's tree into system.new, this device's vendor files and the carried settings into it,
+# then the swap (system -> system.old, system.new -> system): the whole filesystem is never written on an update
+# (data/ - the flash drive's image - and system.old stay). A flat installation is moved to the layout first.
+update_tree() {
+    [ -s $IN/$F_SYSTEM ] || die "no $F_SYSTEM in this release: it cannot update a system in place (install it instead)"
+    fs_mount rw || die "cannot mount the installed system"
+    if [ "$(layout $MNT)" = flat ]; then
+        step migrate
+        migrate $MNT || { fs_umount; die "moving the installation to the system/ layout failed"; }
+        say "moved to the system/ layout (data/ keeps the flash-drive image)"
+    fi
+    step system
+    _need=$(( $(fsize $IN/$F_SYSTEM) / 256 + 65536 ))   # the tree unpacks to about four times the tarball, plus 64 MiB
+    _free=$(df -k $MNT | awk 'NR == 2 { print $4 }')
+    [ "$_free" -gt "$_need" ] || { fs_umount; die "not enough room in the system's filesystem: $((_need / 1024)) MiB needed, $((_free / 1024)) MiB free (system.old, the previous version, can go from Linux: mu5358-update clean)"; }
+    rm -rf $MNT/system.new && mkdir $MNT/system.new || { fs_umount; die "system.new"; }
+    say "unpacking the tree"
+    tar -xzf $IN/$F_SYSTEM -C $MNT/system.new || { rm -rf $MNT/system.new; fs_umount; die "unpacking the tree failed; nothing was changed"; }
+    [ -e $MNT/system.new/etc/openwrt_release ] && [ -e $MNT/system.new/sbin/init ] || { rm -rf $MNT/system.new; fs_umount; die "not an OpenWrt tree; nothing was changed"; }
+    step vendor
+    vendor_files $MNT/system.new || { rm -rf $MNT/system.new; fs_umount; die "vendor files; nothing was changed"; }
+    carry_restore $MNT/system.new || { rm -rf $MNT/system.new; fs_umount; die "carry; nothing was changed"; }
+    sync
+    rm -rf $MNT/system.old
+    mv $MNT/system $MNT/system.old || { fs_umount; die "could not move the old tree aside"; }
+    mv $MNT/system.new $MNT/system || { mv $MNT/system.old $MNT/system; fs_umount; die "could not put the new tree in place (the old one is back)"; }
+    mkdir -p $MNT/boot && echo system > $MNT/boot/tree && echo 0 > $MNT/boot/tries && rm -f $MNT/boot/ok
+    LAYOUT=tree
+    sync
+    say "the tree: $(cat $MNT/system/etc/mu5358/version 2>/dev/null) (the previous one kept as system.old)"
+    fs_umount
+    if [ -x /system/bin/e2fsck ]; then
+        fs_mount ro >/dev/null 2>&1 && fs_umount   # (a mount shows the device for the check below)
+        _d=$BYNAME/fulldumpdb
+        [ "$(installed target)" = region ] && _d=$(/system/bin/losetup -f -s -r -o $((R0 * 512)) $DISK 2>/dev/null)
+        [ -b "$_d" ] && { /system/bin/e2fsck -fn $_d >/dev/null 2>&1 || die "the system's filesystem does not check clean"; say "e2fsck: clean"; }
+        case $_d in /dev/block/loop*) /system/bin/losetup -d $_d ;; esac
+    fi
+}
 
 vendor_files() {
     _r=$1
@@ -592,8 +694,10 @@ boot_images() {
 install() {
     TARGET=${1:-region} LINUX_MIB=${2:-} UPDATE=0
     case $TARGET in region|fulldumpdb) ;; *) die "install region [MIB] | fulldumpdb" ;; esac
-    check; backup; space; chain; system; boot_images
-    rm -f $IN/$F_ROOT $IN/$F_KERNEL $IN/$F_RAMDISK $IN/shadow-hash
+    check
+    [ -s $IN/$F_ROOT ] || die "no $F_ROOT: an installation needs the image"
+    backup; space; chain; system; boot_images; record_put
+    rm -f $IN/$F_ROOT $IN/$F_SYSTEM $IN/$F_KERNEL $IN/$F_RAMDISK $IN/shadow-hash
     step done
     say "installed $(installed version); Linux starts with boot-linux, once"
 }
@@ -608,8 +712,8 @@ update() {
         region) [ "$RSTATE" = ours ] || die "the region has no system" ;;
         fulldumpdb) [ "$(fd_state)" = ours ] || die "fulldumpdb has no system" ;;
     esac
-    carry_save; chain; system; boot_images
-    rm -f $IN/$F_ROOT $IN/$F_KERNEL $IN/$F_RAMDISK $HOME_DIR/carry.tar
+    carry_save; chain; update_tree; boot_images; record_put
+    rm -f $IN/$F_ROOT $IN/$F_SYSTEM $IN/$F_KERNEL $IN/$F_RAMDISK $HOME_DIR/carry.tar
     step done
     say "updated to $(installed version); Linux starts with boot-linux, once"
 }
@@ -656,6 +760,7 @@ uninstall() {
 # ---- boot-linux ------------------------------------------------------------------------------------------------
 boot_linux() {
     [ -f $HOME_DIR/installed ] || die "nothing installed"
+    record_sync
     if [ "$(installed target)" = fulldumpdb ]; then
         [ "$(fd_state)" = ours ] || die "fulldumpdb has no system"
     else

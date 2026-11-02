@@ -251,7 +251,7 @@ class NoTelnetAndThePassword(unittest.TestCase):
         self.assertIn('umask 077', pw)
         # the install runs check before anything is written
         inst = re.search(r'(?ms)^install\(\) \{.*?^\}', s).group(0)
-        self.assertRegex(inst, r'check; backup; space; chain; system; boot_images')
+        self.assertRegex(inst, r'check\n(?:[^\n]*\n)?    backup; space; chain; system; boot_images')
         # and the hash goes into the system's shadow, root's line replaced
         self.assertIn("$1 == \"root\" { $2 = h }", s)
         self.assertIn("grep -qF 'root:$6$' $_r/etc/shadow.new", s)
