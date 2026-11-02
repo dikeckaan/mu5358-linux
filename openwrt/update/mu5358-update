@@ -844,7 +844,8 @@ carry_unesc() { _cu=$(printf '%bx' "$1"); printf '%s' "${_cu%x}"; }
 carry_image() {
     case $2 in
         ubuntu) echo "ubuntu-$(sed -n 's/^VERSION_ID="\(.*\)"/\1/p' "$1/usr/lib/os-release" 2>/dev/null | head -n 1)" ;;
-        *) echo "$2" ;;
+        # the one system here is mu300's openwrt-luci image: its manifest header says so (build-rootfs.sh)
+        *) echo openwrt-luci ;;
     esac
 }
 # carry_manifest OLD NEW OS TAG OUT: the manifest of OLD's image into OUT (its lines, without the first); status 1
@@ -1877,7 +1878,7 @@ delta_room() {
 image_kind() {
     case $1 in
         mu5358-ubuntu-rootfs.*) echo ubuntu-24.04 ;; mu5358-ubuntu-26.04-rootfs.*) echo ubuntu-26.04 ;;
-        mu5358-openwrt-rootfs.*) echo openwrt ;; mu5358-openwrt-luci-rootfs.*) echo openwrt-luci ;; *) return 1 ;;
+        mu5358-openwrt-rootfs.*) echo openwrt ;; mu5358-openwrt-luci-rootfs.*|mu5358-system.*) echo openwrt-luci ;; *) return 1 ;;
     esac
 }
 # diff_asset OS: the release file that is the diff from the image installed in OS (its own manifest says which) to
@@ -2153,6 +2154,7 @@ PREV=$DISK/data/prev
 BYNAME=${MU5358_BYNAME:-/dev/block/by-name}
 RD=${MU5358_RAMDISK:-/run/mu5358/ramdisk}
 CMDLINE=${MU5358_CMDLINE:-/proc/cmdline}
+BOOTCONFIG=${MU5358_BOOTCONFIG:-/proc/bootconfig}   # the GKI kernel keeps androidboot.* here, not on the command line
 LZ4=${MU5358_LZ4:-lz4}
 boot_installed() {  # boot_installed KEY: from boot/installed (the installer's and ours: version date target boot_b ...)
     _bv=$(sed -n "s/^$1=//p" "$BOOTDIR/installed" 2>/dev/null | head -n 1)
@@ -2214,7 +2216,8 @@ write_part() {
 }
 # ---- bootimg end
 boot_update() {  # boot_update TAG: the kernel and ramdisk of the release (fetched into $STAGE by apply) into slot b
-    grep -q 'androidboot.slot_suffix=_b' "$CMDLINE" 2>/dev/null || { echo "Linux is not running from slot b: the boot images are not written" >&2; return 1; }
+    grep -q 'androidboot.slot_suffix=_b' "$CMDLINE" 2>/dev/null || grep -q 'androidboot.slot_suffix = "_b"' "$BOOTCONFIG" 2>/dev/null ||
+        { echo "Linux is not running from slot b: the boot images are not written" >&2; return 1; }
     [ -x "$RD/busybox" ] && [ -s "$RD/misc-bc-android.bin" ] || { echo "no $RD/busybox or misc block (boot/init publishes them): the boot images are not written" >&2; return 1; }
     [ -s "$STAGE/mu5358-kernel.Image.gz" ] && [ -s "$STAGE/mu5358-ramdisk.tar.gz" ] || { echo "the kernel or the ramdisk was not downloaded" >&2; return 1; }
     say "the boot images of $1"

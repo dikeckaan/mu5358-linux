@@ -328,10 +328,26 @@ class Updater(unittest.TestCase):
                     f'sh $S apply; echo "rc=$?"')
         self.assertIn('rc=0', r.stdout, r.stdout[-1500:] + r.stderr[-800:])
         self.assertNotIn('does not bring what carries everything over', r.stdout)
+        self.assertNotIn('no list of the files', r.stdout, 'the manifest of the old tree is read (its header is the image\'s name)')
         self.assertIn('carrying your files over', r.stdout)
         self.assertEqual((self.t / 'disk/system/etc/config/mine').read_text().strip(), 'mine')
         self.assertEqual((self.t / 'disk/system/root/added').read_text().strip(), 'added')
         self.assertTrue((self.t / 'disk/system/etc/mu5358/update-report').exists())
+
+    def test_the_carry_reads_the_manifest_of_the_one_system(self):
+        # the bench (2026-11-02): carry_image answered the system's name ("system") and the manifest header says
+        # the image's (openwrt-luci), so the carry ran without the list and could not tell a changed file from one
+        # the old release shipped
+        r = self.sh(f'mkdir -p /tmp/new /tmp/old/etc/mu5358 && {{ echo "mu300-image-manifest 1 openwrt-luci {T1}"; echo "f 644 0 0 5 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee etc/x"; }} | gzip > /tmp/old/etc/mu5358/image-manifest.gz; '
+                    f'MU5358_LIB=1 . $S; carry_image /tmp/old system; image_kind mu5358-system.tar.gz; carry_manifest /tmp/old /tmp/new system {T1} /tmp/out; echo "rc=$?"; wc -l < /tmp/out')
+        self.assertEqual(r.stdout.split(), ['openwrt-luci', 'openwrt-luci', 'rc=0', '1'], r.stdout + r.stderr)
+
+    def test_the_slot_may_come_from_bootconfig(self):
+        # the GKI kernel keeps androidboot.* in /proc/bootconfig (the bench: "Linux is not running from slot b")
+        r = self.sh(f'mkrel {T2}; printf \'androidboot.slot_suffix = "_b"\\n\' > /t/bootconfig; MU5358_CMDLINE=/t/cmdline_a MU5358_BOOTCONFIG=/t/bootconfig sh $S apply >/dev/null 2>&1; echo "rc=$?"')
+        self.assertIn('rc=0', r.stdout, r.stderr)
+        self.assertEqual(self.installed('version'), T2)
+        self.assertIn(f'KERNEL-{T2}'.encode(), (self.t / 'parts/boot_b').read_bytes())
 
     def test_status_json(self):
         r = self.sh('sh $S status')
