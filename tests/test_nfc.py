@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import DOCKER, TOP, docker_image_ready
+from helpers import BUSYBOX_IMAGE, DOCKER, TOP, docker_busybox, docker_image_ready
 
 IMAGE = os.environ.get('MU5358_TEST_BUILD_IMAGE', 'mu5358-mainline-build')
 KEY = 'secretpass1'
@@ -170,6 +170,173 @@ class Tool(unittest.TestCase):
         (self.t / 'tag.img.log').unlink()
         self.nfc('wifi', 'MyNet', 'wpa2', stdin=KEY)
         self.assertFalse((self.t / 'tag.img.log').exists(), 'a Type 2 tag is left alone')
+
+
+SYNC = TOP / 'openwrt/nfc/mu5358-nfc-sync'
+INIT = TOP / 'openwrt/nfc/mu5358-nfc.init'
+HOTPLUG = TOP / 'openwrt/nfc/95-mu5358-nfc.hotplug'
+UCI_STUB = """#!/bin/sh
+# uci stand-in: "get KEY" answers from /t/uci.kv (KEY=VALUE lines), exit 1 when absent; anything else is recorded
+[ "$1" = -q ] && shift
+if [ "$1" = get ]; then
+    v=$(sed -n "s/^$2=//p" /t/uci.kv | head -n 1)
+    [ -n "$v" ] || exit 1
+    echo "$v"
+    exit 0
+fi
+echo "$*" >> /t/uci.log
+"""
+NFC_STUB = """#!/bin/sh
+# mu5358-nfc stand-in: records its arguments and its stdin, answers like the tool
+echo "$*" >> /t/argv.log
+cut -d' ' -f1 /proc/uptime >> /t/times
+[ "$1" = wifi ] && [ "$3" = wpa2 ] && cat > /t/stdin.bin
+[ -s /t/nfc.sleep ] && sleep "$(cat /t/nfc.sleep)"
+rc=$(cat /t/nfc.rc 2>/dev/null || echo 0)
+[ "$rc" = 0 ] && echo written || echo "mu5358-nfc: no tag on /dev/i2c-4 at 0x57: Remote I/O error" >&2
+exit "$rc"
+"""
+
+
+class Sync(unittest.TestCase):
+    """mu5358-nfc-sync (openwrt/nfc): the one writer of the tag, under busybox with uci and the tool stubbed."""
+
+    @classmethod
+    def setUpClass(cls):
+        why = docker_busybox()
+        if why:
+            raise unittest.SkipTest(why)
+
+    def setUp(self):
+        self.t = Path(tempfile.mkdtemp(prefix='mu5358-nfc-sync-', dir=TOP / 'work'))
+        self.addCleanup(shutil.rmtree, self.t, ignore_errors=True)
+        (self.t / 'bin').mkdir()
+        (self.t / 'run').mkdir()
+        (self.t / 'etc').mkdir()
+        (self.t / 'bin/uci').write_text(UCI_STUB)
+        (self.t / 'bin/mu5358-nfc').write_text(NFC_STUB)
+        for f in ('bin/uci', 'bin/mu5358-nfc'):
+            (self.t / f).chmod(0o755)
+        (self.t / 'i2c-4').write_text('')
+        self.uci(ssid='MyNet', key=KEY, encryption='psk2')
+
+    def uci(self, **kv):
+        self.kv = ''.join(f'wireless.ap0.{k}={v}\n' for k, v in kv.items())
+
+    def sh(self, script, timeout=120, rc='0', sleep=''):
+        # Every file the script reads is written from inside the container: a host write or unlink just before a
+        # docker run can be served stale through the bind mount (seen on Docker Desktop, 2026-11-03).
+        prelude = ('export MU5358_NFC_TOOL=/t/bin/mu5358-nfc MU5358_NFC_STATE=/t/etc/nfc MU5358_NFC_RUN=/t/run '
+                   'MU5358_UCI=/t/bin/uci MU5358_NFC_BUS=/t/i2c-4 MU5358_NFC_SYNC=/w/openwrt/nfc/mu5358-nfc-sync PATH=/t/bin:$PATH; '
+                   'S=/w/openwrt/nfc/mu5358-nfc-sync; : > /t/argv.log; : > /t/times; printf "%s" "$KV" > /t/uci.kv; '
+                   'printf "%s" "$NFC_RC" > /t/nfc.rc; printf "%s" "$NFC_SLEEP" > /t/nfc.sleep; ')
+        argv = [DOCKER, 'run', '--rm', '-e', f'KV={self.kv}', '-e', f'NFC_RC={rc}', '-e', f'NFC_SLEEP={sleep}',
+                '-v', f'{TOP}:/w:ro', '-v', f'{self.t}:/t', BUSYBOX_IMAGE, 'sh', '-c', prelude + script]
+        return subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+
+    def argv(self):
+        p = self.t / 'argv.log'
+        return p.read_text().splitlines() if p.exists() else []
+
+    def result(self):
+        return (self.t / 'run/nfc-result').read_text().strip()
+
+    def test_default_on_writes_wpa2(self):
+        r = self.sh('sh $S sync')
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.argv(), ['wifi MyNet wpa2'])
+        self.assertEqual((self.t / 'stdin.bin').read_bytes(), KEY.encode())
+        self.assertEqual(self.result(), 'wpa2')
+        self.assertEqual(self.sh('sh $S state').stdout.strip(), 'on')
+
+    def test_key_only_on_stdin(self):
+        key = '-start $x `y` \\z"q'
+        self.uci(ssid='My Net "x"', key=key, encryption='psk2')
+        r = self.sh('sh $S sync')
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.argv(), ['wifi My Net "x" wpa2'])
+        self.assertEqual((self.t / 'stdin.bin').read_bytes(), key.encode())
+        self.assertNotIn(key, (self.t / 'argv.log').read_text())
+        self.assertNotIn('$x', r.stdout + r.stderr)
+
+    def test_off_clears(self):
+        r = self.sh('echo off > /t/etc/nfc; sh $S sync')
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.argv(), ['clear'])
+        self.assertEqual(self.result(), 'disabled')
+        self.assertEqual(self.sh('sh $S state').stdout.strip(), 'off')
+
+    def test_hotspot_disabled_clears(self):
+        self.uci(ssid='MyNet', key=KEY, encryption='psk2', disabled='1')
+        self.sh('sh $S sync')
+        self.assertEqual(self.argv(), ['clear'])
+        self.assertEqual(self.result(), 'hotspot_off')
+
+    def test_unsupported_encryption_clears(self):
+        for enc in ('sae', 'psk', 'owe', 'wpa2+eap', 'psk-mixed'):
+            self.uci(ssid='MyNet', key=KEY, encryption=enc)
+            self.sh('sh $S sync')
+            self.assertEqual(self.argv(), ['clear'], enc)
+            self.assertEqual(self.result(), 'unsupported', enc)
+        for enc, want in (('none', 'wifi MyNet open'), ('', 'wifi MyNet open'), ('sae-mixed', 'wifi MyNet wpa2'),
+                          ('psk2+ccmp', 'wifi MyNet wpa2'), ('psk2+aes', 'wifi MyNet wpa2')):
+            self.uci(ssid='MyNet', key=KEY, encryption=enc)
+            self.sh('sh $S sync')
+            self.assertEqual(self.argv(), [want], enc)
+            self.assertEqual(self.result(), want.split()[-1] if want.endswith('open') else 'wpa2', enc)
+
+    def test_toggle_on_off_state(self):
+        self.assertEqual(self.sh('sh $S toggle; sh $S state').stdout.strip(), 'off')
+        self.assertEqual((self.t / 'etc/nfc').read_text().strip(), 'off')
+        self.assertEqual(self.sh('sh $S toggle; sh $S state').stdout.strip(), 'on')
+        self.assertFalse((self.t / 'etc/nfc').exists(), 'absent = on')
+        self.assertEqual(self.sh('sh $S off; sh $S state').stdout.strip(), 'off')
+        self.assertEqual(self.sh('sh $S on; sh $S state').stdout.strip(), 'on')
+        self.assertEqual(self.argv()[-1], 'wifi MyNet wpa2', 'every switch re-syncs')
+
+    def test_tool_failure_is_error(self):
+        r = self.sh('sh $S sync', rc='1')
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(self.result(), 'error')
+        err = self.t / 'run/nfc.err'
+        self.assertTrue(err.exists())
+        self.assertEqual(err.stat().st_mode & 0o777, 0o600)
+        self.assertIn('Remote I/O error', err.read_text())
+
+    def test_no_tool_is_no_tag(self):
+        r = self.sh('MU5358_NFC_TOOL=/t/none sh $S sync')
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.result(), 'no_tag')
+        self.assertEqual(self.argv(), [])
+        self.assertEqual(self.sh('MU5358_NFC_TOOL=/t/none sh $S supported; echo rc=$?').stdout.strip(), 'rc=1')
+        self.assertEqual(self.sh('sh $S supported; echo rc=$?').stdout.strip(), 'rc=0')
+        self.assertEqual(self.sh('MU5358_NFC_BUS=/t/none sh $S supported; echo rc=$?').stdout.strip(), 'rc=1', 'no bus')
+
+    def test_lock_serialises(self):
+        r = self.sh('sh $S sync & sh $S sync & wait', sleep='1')
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(len(self.argv()), 2)
+        self.assertEqual(self.result(), 'wpa2')
+        self.assertTrue((self.t / 'run/nfc.lock').exists())
+        a, b = (float(x) for x in (self.t / 'times').read_text().split())
+        self.assertGreaterEqual(abs(a - b), 0.9, 'the second sync waited for the first')
+
+    def test_init_and_hotplug_shape(self):
+        init = INIT.read_text()
+        self.assertIn('START=95', init)
+        self.assertIn('procd_add_reload_trigger wireless', init)
+        self.assertNotIn('respawn', init)
+        self.assertIn('mu5358-nfc-sync sync', init)
+        hp = HOTPLUG.read_text()
+        for action, iface, want in (('ifup', 'lan', 1), ('ifdown', 'lan', 1), ('ifup', 'wan', 0), ('ifupdate', 'lan', 0)):
+            r = self.sh(f'export ACTION={action} INTERFACE={iface}; sh /w/openwrt/nfc/95-mu5358-nfc.hotplug')
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(len(self.argv()), want, (action, iface))
+        self.uci(ssid='MyNet', key=KEY, encryption='psk2', network='guest')
+        self.sh('export ACTION=ifup INTERFACE=lan; sh /w/openwrt/nfc/95-mu5358-nfc.hotplug')
+        self.assertEqual(self.argv(), [], 'the AP on another network: lan is not it')
+        self.sh('export ACTION=ifup INTERFACE=guest; sh /w/openwrt/nfc/95-mu5358-nfc.hotplug')
+        self.assertEqual(len(self.argv()), 1)
 
 
 if __name__ == '__main__':

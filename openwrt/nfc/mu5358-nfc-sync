@@ -1,0 +1,77 @@
+#!/bin/sh
+# mu5358-nfc-sync: the one writer of the U30 Pro's NFC tag (tools/nfc/mu5358-nfc). The tag carries the hotspot's
+# Wi-Fi credential, so a phone that touches the device joins the hotspot; this script keeps the record equal to
+# wireless.ap0 and clears it when NFC is off, the hotspot is off, or the encryption is not one phones take from a tag.
+#   mu5358-nfc-sync [sync]      write what wireless.ap0 says (open, wpa2) or an empty record; the result word in
+#                               /run/mu5358/nfc-result: open wpa2 disabled hotspot_off unsupported no_tag error
+#   mu5358-nfc-sync on|off|toggle   the switch (/etc/mu5358/nfc: "off"; absent = on), then a sync
+#   mu5358-nfc-sync state       prints on|off
+#   mu5358-nfc-sync supported   exit 0 when the tool and the bus exist
+# Called by /etc/init.d/mu5358-nfc (boot, LuCI apply), /etc/hotplug.d/iface/95-mu5358-nfc (the AP's interface up or
+# down), after every "wifi reload" (buttons, the screen), by the screen's row and the panel's card. Event-driven: no
+# polling. The key goes to the tool on stdin only, never on a command line, into the log or into the result file.
+# After kanoqwq/mu300-linux's u30pro-nfc-control (u30pro-bringup, MIT). Tests: tests/test_nfc.py Sync.
+set -u
+TOOL=${MU5358_NFC_TOOL:-/opt/mu5358/bin/mu5358-nfc}
+STATE=${MU5358_NFC_STATE:-/etc/mu5358/nfc}
+RUN=${MU5358_NFC_RUN:-/run/mu5358}
+UCI=${MU5358_UCI:-uci}
+BUS=${MU5358_NFC_BUS:-/dev/i2c-4}
+AP=${MU5358_NFC_AP:-ap0}
+
+state() { [ "$(cat "$STATE" 2>/dev/null)" = off ] && echo off || echo on; }
+case ${1:-sync} in
+    state) state; exit 0 ;;
+    supported) [ -x "$TOOL" ] && [ -e "$BUS" ]; exit ;;
+    sync|on|off|toggle) action=$1 ;;
+    --locked) action=${2:-sync} ;;
+    *) echo "usage: mu5358-nfc-sync [sync|on|off|toggle|state|supported]" >&2; exit 2 ;;
+esac
+umask 077
+mkdir -p "$RUN"
+# one writer at a time: the lock is the kernel's, released with the process
+[ "${1:-}" = --locked ] || exec flock -x "$RUN/nfc.lock" sh "$0" --locked "$action"
+
+result() { printf '%s\n' "$1" > "$RUN/nfc-result"; }
+fail() {
+    result error
+    logger -t mu5358-nfc "the tag was not updated ($1); the hotspot is unchanged" 2>/dev/null
+    echo "mu5358-nfc-sync: the tag was not updated ($1)" >&2
+    exit 1
+}
+case $action in
+    on) rm -f "$STATE" ;;
+    off) echo off > "$STATE" ;;
+    toggle) if [ "$(state)" = on ]; then echo off > "$STATE"; else rm -f "$STATE"; fi ;;
+esac
+if ! [ -x "$TOOL" ] || ! [ -e "$BUS" ]; then
+    result no_tag
+    exit 0
+fi
+auth=; reason=disabled
+if [ "$(state)" = on ]; then
+    reason=hotspot_off
+    if [ "$($UCI -q get "wireless.$AP.disabled" 2>/dev/null)" != 1 ]; then
+        reason=unsupported
+        case $($UCI -q get "wireless.$AP.encryption" 2>/dev/null) in
+            none|'') auth=open ;;
+            psk2|psk2+*|sae-mixed|sae-mixed+*) auth=wpa2 ;;
+        esac
+    fi
+fi
+rm -f "$RUN/nfc.err"
+if [ -z "$auth" ]; then
+    "$TOOL" clear > /dev/null 2> "$RUN/nfc.err" || fail "$(head -n 1 "$RUN/nfc.err")"
+    result "$reason"
+    exit 0
+fi
+ssid=$($UCI -q get "wireless.$AP.ssid") || fail "no SSID"
+if [ "$auth" = open ]; then
+    "$TOOL" wifi "$ssid" open > /dev/null 2> "$RUN/nfc.err" || fail "$(head -n 1 "$RUN/nfc.err")"
+else
+    # the key: stdin only; printf '%s' adds nothing, the tool takes 8-63 characters or 64 hex digits
+    key=$($UCI -q get "wireless.$AP.key") || fail "no key"
+    printf '%s' "$key" | "$TOOL" wifi "$ssid" wpa2 > /dev/null 2> "$RUN/nfc.err" || { unset key; fail "$(head -n 1 "$RUN/nfc.err")"; }
+    unset key
+fi
+result "$auth"

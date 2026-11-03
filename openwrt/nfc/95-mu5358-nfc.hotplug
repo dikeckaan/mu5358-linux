@@ -1,0 +1,6 @@
+#!/bin/sh
+# U30 Pro: the AP's interface came up or went down (netifd): the NFC tag follows (/etc/hotplug.d/iface/95-mu5358-nfc)
+case ${ACTION:-} in ifup|ifdown) ;; *) exit 0 ;; esac
+net=$(${MU5358_UCI:-uci} -q get "wireless.${MU5358_NFC_AP:-ap0}.network" 2>/dev/null)
+[ "${INTERFACE:-}" = "${net:-lan}" ] || exit 0
+exec "${MU5358_NFC_SYNC:-/opt/mu5358/bin/mu5358-nfc-sync}" sync
