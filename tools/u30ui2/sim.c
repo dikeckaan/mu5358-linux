@@ -25,7 +25,7 @@ void data_poke(void) {}
 void data_run(const char *c) { printf("RUN %s\n", c); fflush(stdout); }
 static int sim_screen = 1, sim_down, sim_moved, sim_long_sent, sim_x0, sim_y0, sim_x, sim_y;
 static long sim_now = 1000000, sim_t0;
-int display_init(void) { return 0; }
+int display_init(void (*first)(void)) { if (first) first(); return 0; }
 void display_present(void) {}
 void display_backlight(int on) { sim_screen = on; }
 int display_is_on(void) { return sim_screen; }

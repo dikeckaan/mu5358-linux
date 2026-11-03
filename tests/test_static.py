@@ -668,6 +668,23 @@ class Nfc(unittest.TestCase):
         self.assertEqual(missing, [], 'run tools/u30ui2/mkfont.sh: ' + ' '.join('U+%04X' % c for c in missing))
 
 
+class Screen(unittest.TestCase):
+    """tools/u30ui/display.c: the first frame is in the buffer before the first mode-set, so the dashboard's start
+    never shows a black frame (the panel's MADCTL turn comes before the mode-set too)."""
+
+    def test_display_init_takes_first_frame(self):
+        self.assertIn('int display_init(void (*first)(void));', (TOP / 'tools/u30ui/display.h').read_text(encoding='utf-8'))
+        d = (TOP / 'tools/u30ui/display.c').read_text(encoding='utf-8')
+        body = d[d.index('int display_init(void (*first)(void))'):]
+        body = body[:body.index('\n}\n')]
+        self.assertLess(body.index('first('), body.index('DRM_IOCTL_MODE_SETCRTC'), 'the first frame before the mode-set')
+        self.assertLess(body.index('panel_turn()'), body.index('DRM_IOCTL_MODE_SETCRTC'), 'the turn before the mode-set')
+        for rel in ('tools/u30ui2/ui.c', 'tools/u30ui/ui.c', 'tools/u30ui2/preview.c', 'tools/u30ui2/sim.c'):
+            t = (TOP / rel).read_text(encoding='utf-8')
+            self.assertRegex(t, r'display_init\((first_frame|NULL|void \(\*first\)\(void\))\)', rel)
+        self.assertIn('display_init(first_frame)', (TOP / 'tools/u30ui2/ui.c').read_text(encoding='utf-8'))
+
+
 class Buttons(unittest.TestCase):
     """The buttons service (the heredoc in openwrt/customize.sh) under busybox with mu5358-keys, pidof, kill, poweroff
     and logger stubbed: the power key held opens the dashboard's Power page (1.5 s) or, without the dashboard, powers

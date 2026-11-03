@@ -906,7 +906,7 @@ int main(void)
 	signal(SIGUSR2, on_usr2);
 	conf_load();
 	gfx_init();
-	if (display_init()) {
+	if (display_init(NULL)) {
 		fprintf(stderr, "u30ui: no display\n");
 		return 1;
 	}

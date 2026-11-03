@@ -17,7 +17,7 @@ volatile int data_want_fast;
 void data_start(void) {}
 void data_run(const char *c) { (void)c; }
 void data_poke(void) {}
-int display_init(void) { return 0; }
+int display_init(void (*first)(void)) { if (first) first(); return 0; }
 void display_present(void) {}
 void display_backlight(int on) { (void)on; }
 int display_is_on(void) { return 1; }

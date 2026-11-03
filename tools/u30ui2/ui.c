@@ -1247,12 +1247,18 @@ static int ui_command(const char *line)
 }
 
 #ifndef UI_HOST
+/* the first frame, drawn before the panel's mode-set: the pages with whatever the data thread has not yet read */
+static void first_frame(void)
+{
+	draw(now_ms());
+}
+
 int main(void)
 {
 	struct pollfd pfd[2];
 
 	ui_init();
-	if (display_init()) {
+	if (display_init(first_frame)) {
 		fprintf(stderr, "u30ui2: no display\n");
 		return 1;
 	}

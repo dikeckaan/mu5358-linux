@@ -88,7 +88,9 @@ static int sysfs_int(const char *path)
 	return n > 0 ? atoi(b) : -1;
 }
 
-int display_init(void)
+static void blit(uint32_t *fb);
+
+int display_init(void (*first)(void))
 {
 	struct drm_mode_card_res res = {0};
 	struct drm_mode_get_connector conn;
@@ -168,6 +170,15 @@ int display_init(void)
 		memset(fbs[i], 0, cd.size);
 	}
 	back = 1;
+	/* the turn first (the SPI bus is idle before the mode-set), then the first frame into buffer 0 in the right
+	 * orientation, then the mode-set shows it: no black frame (W1 polish, 2026-11-03) */
+	esd_num = esd_read();
+	if (!getenv("U30UI_PANEL_ROT") || atoi(getenv("U30UI_PANEL_ROT")))
+		panel_turn();
+	if (first) {
+		first();
+		blit(fbs[0]);
+	}
 	crtc.crtc_id = crtc_id;
 	crtc.fb_id = fb_ids[0];
 	crtc.set_connectors_ptr = (uintptr_t)&conn_id;
@@ -177,9 +188,6 @@ int display_init(void)
 	if (ioctl(fd, DRM_IOCTL_MODE_SETCRTC, &crtc))
 		return -1;
 	fprintf(stderr, "u30ui: panel %ux%u\n", fbw, fbh);
-	esd_num = esd_read();
-	if (!getenv("U30UI_PANEL_ROT") || atoi(getenv("U30UI_PANEL_ROT")))
-		panel_turn();
 	return 0;
 }
 
@@ -209,10 +217,23 @@ static void wait_flip(int ms)
 	flip_pending = 0;	/* no event within ms: go on rather than hang */
 }
 
+/* gfx_buf into a frame buffer, as the panel is turned */
+static void blit(uint32_t *fb)
+{
+	uint32_t x, y, w = fbw < W ? fbw : W, h = fbh < H ? fbh : H;
+
+	if (panel_rot)
+		for (y = 0; y < h; y++)
+			memcpy(fb + y * (pitch / 4), gfx_buf + y * W, w * 4);
+	else	/* turned by 180 degrees: the panel is upside down */
+		for (y = 0; y < h; y++)
+			for (x = 0; x < w; x++)
+				fb[(fbh - 1 - y) * (pitch / 4) + (fbw - 1 - x)] = gfx_buf[y * W + x];
+}
+
 void display_present(void)
 {
 	struct drm_mode_crtc_page_flip pf = {0};
-	uint32_t x, y, w = fbw < W ? fbw : W, h = fbh < H ? fbh : H, *fb;
 	int tries;
 
 	wait_flip(100);
@@ -226,14 +247,7 @@ void display_present(void)
 			panel_turn();
 		}
 	}
-	fb = fbs[back];
-	if (panel_rot)
-		for (y = 0; y < h; y++)
-			memcpy(fb + y * (pitch / 4), gfx_buf + y * W, w * 4);
-	else	/* turned by 180 degrees: the panel is upside down */
-		for (y = 0; y < h; y++)
-			for (x = 0; x < w; x++)
-				fb[(fbh - 1 - y) * (pitch / 4) + (fbw - 1 - x)] = gfx_buf[y * W + x];
+	blit(fbs[back]);
 	pf.crtc_id = crtc_id;
 	pf.fb_id = fb_ids[back];
 	pf.flags = DRM_MODE_PAGE_FLIP_EVENT;

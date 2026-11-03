@@ -400,7 +400,7 @@ BL=${MU5358_BL:-/sys/class/backlight/sprd_backlight}
 	case "$code $what" in
 	"116 long")
 		if [ $dash = 1 ] && p=$(pidof u30ui2) && [ -n "$p" ]; then
-			echo power > /tmp/u30ui.cmd; kill -USR2 $p
+			rm -f /tmp/u30ui.cmd; (set -C; echo power > /tmp/u30ui.cmd) && kill -USR2 $p   # noclobber: a planted link is refused
 		else
 			logger -t mu5358-buttons "power held: shutting down"
 			poweroff
