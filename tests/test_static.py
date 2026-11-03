@@ -512,6 +512,24 @@ class Usb(unittest.TestCase):
                     self.assertTrue(pairs.get(s_), f'{s_!r} has no translation in {rel(po)}')
             self.assertNotIn('USB on this device is the network link to the computer', pairs, 'the old note stays in the po')
 
+    def test_role_card(self):
+        """The USB role card (openwrt/usb/usb-role.js): shipped, injected with the disk card, its strings translated."""
+        c = CUSTOMIZE.read_text(encoding='utf-8')
+        self.assertIn('cp "$U/usb-role.js" "$R/www/luci-static/resources/mu5358/usb-role.js"', c)
+        i = c.index('mu5358: USB role card')
+        self.assertIn('L.require("mu5358.usb-role")', c[i:i + 600])
+        js = (TOP / 'openwrt/usb/usb-role.js').read_text(encoding='utf-8')
+        self.assertIn("rpc.declare({ object: 'mu5358usb', method: 'set'", js)
+        for v in ('auto', 'host', 'device'):
+            self.assertIn("'%s'" % v, js)
+        strings = re.findall(r"_\('((?:[^'\\]|\\.)*)'\)", js)
+        self.assertGreater(len(strings), 6)
+        for po in self.PO:
+            pairs = self.po_pairs(po)
+            for s_ in strings:
+                with self.subTest(po=po.parent.name, s=s_[:40]):
+                    self.assertTrue(pairs.get(s_), f'{s_!r} has no translation in {rel(po)}')
+
     def test_device_js_patch_keeps_the_net_card(self):
         c = CUSTOMIZE.read_text(encoding='utf-8')
         i = c.index('view/mu5358/device.js')

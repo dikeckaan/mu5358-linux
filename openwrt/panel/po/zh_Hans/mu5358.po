@@ -4385,3 +4385,20 @@ msgstr "标签未更新；热点未改变"
 
 msgid "The NFC adapter gave no valid reply"
 msgstr "NFC 适配器没有返回有效回复"
+
+# USB role (openwrt/usb/usb-role.js)
+
+msgid "Policy"
+msgstr "策略"
+
+msgid "Data role now"
+msgstr "当前数据角色"
+
+msgid "Host capable"
+msgstr "支持主机模式"
+
+msgid "Device"
+msgstr "设备"
+
+msgid "Host powers a USB stick, keyboard or network adapter on an OTG adapter. It undoes itself after 60 seconds unless kept from a shell, because the port is also the way to the computer. Changing the policy may replug the USB link for a moment."
+msgstr "主机模式为 OTG 转接器上的 U 盘、键盘或网卡供电。由于该端口也是连接电脑的通道，除非在 shell 中保持，否则 60 秒后会自动撤销。更改策略可能会使 USB 连接短暂重新插拔。"

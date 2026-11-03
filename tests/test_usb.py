@@ -541,10 +541,81 @@ class Host(Base):
         self.assertEqual(self.role(), '[device] host')
 
 
+class Policy(Base):
+    """The port's policy through port_type (dual, source, sink; the fork's method, TCPM re-evaluates the attachment):
+    auto|host|device, host undoing itself to dual; the data-role swap stays the fallback when port_type is not
+    writable; status reports the policy and musb_hostenable (report-only)."""
+
+    def setUp(self):
+        super().setUp()
+        self.typec = self.tmp / 'typec'
+        self.typec.mkdir()
+        (self.typec / 'data_role').write_text('[device] host\n')
+        (self.typec / 'port_type').write_text('[dual] source sink\n')
+        self.musb = self.tmp / 'musb'
+        self.musb.mkdir()
+        (self.musb / 'musb_hostenable').write_text('enabled\n')
+        self.env.update(MU5358_TYPEC=str(self.typec), MU5358_MUSB=str(self.musb), MU5358_HOST_UNDO='1')
+
+    def port_type(self):
+        return (self.typec / 'port_type').read_text().strip()
+
+    def test_auto_writes_dual(self):
+        (self.typec / 'port_type').write_text('[source] dual sink\n')
+        r = self.usb('auto')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.port_type(), 'dual')
+        self.assertEqual((self.typec / 'data_role').read_text().strip(), '[device] host', 'no data-role swap')
+
+    def test_host_prefers_port_type(self):
+        r = self.usb('host')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.port_type(), 'source')
+        self.assertEqual((self.typec / 'data_role').read_text().strip(), '[device] host', 'no data-role swap')
+        self.assertIn('usb-host-keep', r.stdout)
+
+    def test_undo_restores_dual(self):
+        self.usb('host')
+        time.sleep(2.5)
+        self.assertEqual(self.port_type(), 'dual')
+
+    def test_device_writes_sink(self):
+        r = self.usb('device')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.port_type(), 'sink')
+
+    def test_host_falls_back_to_data_role(self):
+        (self.typec / 'port_type').chmod(0o444)
+        r = self.usb('host')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.port_type(), '[dual] source sink')
+        self.assertEqual((self.typec / 'data_role').read_text().strip(), 'host')
+        time.sleep(2.5)
+        self.assertEqual((self.typec / 'data_role').read_text().strip(), 'device')
+
+    def test_status_reports_policy_and_host_capable(self):
+        out = self.usb('status').stdout
+        self.assertIn('policy: auto\n', out)
+        self.assertIn('host capable: yes\n', out)
+        (self.typec / 'port_type').write_text('[source] dual sink\n')
+        self.assertIn('policy: host\n', self.usb('status').stdout)
+        (self.typec / 'port_type').write_text('[sink] dual source\n')
+        self.assertIn('policy: device\n', self.usb('status').stdout)
+
+    def test_status_without_musb_attr(self):
+        out = self.usb('status', env={'MU5358_MUSB': str(self.tmp / 'nowhere')}).stdout
+        self.assertIn('host capable: no\n', out)
+        self.assertIn('policy: auto\n', out)
+        (self.typec / 'port_type').unlink()
+        out = self.usb('status').stdout
+        self.assertIn('policy: unavailable\n', out, 'no port_type: the data-role swap only')
+
+
 class Rpcd(Base):
     """The rpcd object mu5358usb (list, call get, call set) over a recorded stand-in for mu5358-usb."""
     STATUS = ('storage: on\nsize: 2048 MiB\nexported: yes\nimage: /data/usb-disk.img (present)\nfree: 1234 MiB\n'
-              'USB network from the next boot: ncm (the default)\nthis boot: ncm\nadb: on\nauth: keys\nrole: device\n')
+              'USB network from the next boot: ncm (the default)\nthis boot: ncm\nadb: on\nauth: keys\nrole: device\n'
+              'policy: auto\nhost capable: yes\n')
 
     def setUp(self):
         super().setUp()
@@ -561,7 +632,7 @@ class Rpcd(Base):
 
     def test_get(self):
         self.assertEqual(self.rpc('call', 'get'), {'ok': 1, 'storage': 'on', 'size_mib': 2048, 'exported': 1, 'image': 1,
-                                                   'free_mib': 1234, 'adb': 'keys', 'role': 'device'})
+                                                   'free_mib': 1234, 'adb': 'keys', 'role': 'device', 'policy': 'auto', 'host_capable': 1})
         self.assertEqual(self.calls(), [['mu5358-usb', 'status']])
 
     def test_set_storage_runs_the_tool(self):
@@ -576,6 +647,19 @@ class Rpcd(Base):
         self.log.unlink()
         self.rpc('call', 'set', stdin='{"kind":"adb","value":"off"}')
         self.assertEqual(self.calls(), [['mu5358-usb', 'adb', 'off']])
+
+    def test_role_set_and_get(self):
+        for v in ('auto', 'host', 'device'):
+            self.log.unlink(missing_ok=True)
+            out = self.rpc('call', 'set', stdin='{"kind":"role","value":"%s"}' % v)
+            self.assertEqual(out['ok'], 1, v)
+            self.assertEqual(self.calls(), [['mu5358-usb', v]])
+        self.log.unlink()
+        self.assertEqual(self.rpc('call', 'set', stdin='{"kind":"role","value":"source"}')['ok'], 0)
+        self.assertEqual(self.calls(), [])
+        self.env['STUB_REPLY'] = self.STATUS.replace('policy: auto', 'policy: unavailable').replace('host capable: yes', 'host capable: no')
+        out = self.rpc('call', 'get')
+        self.assertEqual((out['policy'], out['host_capable']), ('unavailable', 0))
 
     def test_refuses_what_is_not_allowed(self):
         for body in ('{"kind":"storage","value":"on; reboot"}', '{"kind":"reboot","value":"on"}',

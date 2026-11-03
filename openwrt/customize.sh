@@ -44,6 +44,7 @@ cp "$U/mu5358-usb" "$R/opt/mu5358/bin/mu5358-usb" && chmod 755 "$R/opt/mu5358/bi
 cp "$U/rpcd-mu5358usb" "$R/usr/libexec/rpcd/mu5358usb" && chmod 755 "$R/usr/libexec/rpcd/mu5358usb"
 cp "$U/acl-mu5358usb.json" "$R/usr/share/rpcd/acl.d/luci-app-mu5358-usb.json"
 mkdir -p "$R/www/luci-static/resources/mu5358" && cp "$U/usb-storage.js" "$R/www/luci-static/resources/mu5358/usb-storage.js"
+cp "$U/usb-role.js" "$R/www/luci-static/resources/mu5358/usb-role.js"
 cp "$U/mu5358-usb-boot.init" "$R/etc/init.d/mu5358-usb-boot" && chmod 755 "$R/etc/init.d/mu5358-usb-boot"
 ln -sf ../init.d/mu5358-usb-boot "$R/etc/rc.d/S12mu5358-usb-boot"
 # adb: on, keys only (the maintainer's call of 2026-11-01; mu300 #150): a computer gets in with a key authorised by
@@ -617,6 +618,12 @@ f="$R/www/luci-static/resources/view/mu5358/device.js"
 if [ -f "$f" ] && ! grep -q 'mu5358: USB disk' "$f"; then
     grep -q '^[[:space:]]*this.root = root;$' "$f" || { echo "$f: no this.root line to patch" >&2; exit 1; }
     sed -i 's@^\([[:space:]]*\)this.root = root;$@&\n\1/* mu5358: USB disk card in, the role and adapter cards out (customize.sh) */\n\1root.querySelector(".mud-device-grid > section").style.display = "none";\n\1root.querySelector("#mud-usb-adapters-card").style.display = "none";\n\1L.require("mu5358.usb-storage").then(function(m) { m.render(root, root.querySelector(".mud-device-grid")); });@' "$f"
+fi
+# The USB role card (openwrt/usb/usb-role.js: auto|host|device through port_type) after the USB disk card, in place of
+# mu300's data-role card (hidden above)
+if [ -f "$f" ] && ! grep -q 'mu5358: USB role card' "$f"; then
+    grep -q 'L.require("mu5358.usb-storage")' "$f" || { echo "$f: no usb-storage line to patch" >&2; exit 1; }
+    sed -i 's@^\([[:space:]]*\)L.require("mu5358.usb-storage").*$@&\n\1/* mu5358: USB role card (customize.sh) */\n\1L.require("mu5358.usb-role").then(function(m) { m.render(root, root.querySelector(".mud-device-grid")); });@' "$f"
 fi
 # The NFC card (openwrt/nfc/nfc.js, rpcd mu5358nfc) after the USB disk card
 if [ -f "$f" ] && ! grep -q 'mu5358: NFC card' "$f"; then

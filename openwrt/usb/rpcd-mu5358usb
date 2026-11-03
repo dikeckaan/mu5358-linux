@@ -2,8 +2,9 @@
 # rpcd object "mu5358usb" (/usr/libexec/rpcd/mu5358usb): the control panel's handle on the USB flash drive and adb,
 # through /opt/mu5358/bin/mu5358-usb (openwrt/usb/mu5358-usb). ACL: openwrt/usb/acl-mu5358usb.json.
 #   get                      {"ok":1,"storage":"on|off","size_mib":N,"exported":0|1,"image":0|1,"free_mib":N,
-#                             "adb":"off|open|keys|unavailable","role":"device|host|unavailable"}
-#   set {"kind":K,"value":V}  K storage (on|off), storage_size (64..999999 MiB), adb (on|off)
+#                             "adb":"off|open|keys|unavailable","role":"device|host|unavailable",
+#                             "policy":"auto|host|device|unavailable","host_capable":0|1}
+#   set {"kind":K,"value":V}  K storage (on|off), storage_size (64..999999 MiB), adb (on|off), role (auto|host|device)
 #                             → {"ok":1,"message":"..."} or {"ok":0,"error":"..."}
 # The arguments are read with sed (rpcd hands one compact JSON object), then checked against allow-lists: nothing from
 # the request reaches a command line unchecked. (tests/test_usb.py Rpcd.)
@@ -39,9 +40,12 @@ case ${1:-} in
                 esac
                 role=$(printf '%s\n' "$out" | sed -n 's/^role: //p' | head -n 1)
                 case $role in host|device) ;; *) role=unavailable ;; esac
+                policy=$(printf '%s\n' "$out" | sed -n 's/^policy: //p' | head -n 1)
+                case $policy in auto|host|device) ;; *) policy=unavailable ;; esac
+                hostcap=0; [ "$(printf '%s\n' "$out" | sed -n 's/^host capable: //p' | head -n 1)" != yes ] || hostcap=1
                 case $st in on|off) ;; *) st=off ;; esac
-                printf '{"ok":1,"storage":"%s","size_mib":%s,"exported":%s,"image":%s,"free_mib":%s,"adb":"%s","role":"%s"}\n' \
-                    "$st" "$size" "$exported" "$image" "$free" "$adb" "$role" ;;
+                printf '{"ok":1,"storage":"%s","size_mib":%s,"exported":%s,"image":%s,"free_mib":%s,"adb":"%s","role":"%s","policy":"%s","host_capable":%s}\n' \
+                    "$st" "$size" "$exported" "$image" "$free" "$adb" "$role" "$policy" "$hostcap" ;;
             set)
                 REQ=$(cat)
                 kind=$(field kind); value=$(field value)
@@ -50,6 +54,7 @@ case ${1:-} in
                     storage_size) case $value in [0-9][0-9]|[0-9][0-9][0-9]|[0-9][0-9][0-9][0-9]|[0-9][0-9][0-9][0-9][0-9]|[0-9][0-9][0-9][0-9][0-9][0-9]) set -- storage size "$value" ;;
                                                   *) reply_err "The size must be a number of MiB" ;; esac ;;
                     adb) case $value in on|off) set -- adb "$value" ;; *) reply_err "The value must be on or off" ;; esac ;;
+                    role) case $value in auto|host|device) set -- "$value" ;; *) reply_err "The role must be auto, host or device" ;; esac ;;
                     *) reply_err "Unknown USB setting" ;;
                 esac
                 if out=$("$USB" "$@" 2>&1); then
