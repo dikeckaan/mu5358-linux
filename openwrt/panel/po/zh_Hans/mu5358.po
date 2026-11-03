@@ -4344,3 +4344,44 @@ msgstr "大小至少为 64 MiB"
 
 msgid "The device restarts now. The default boot is Android, so it starts Android: start Linux again from the web installer (Restart into Linux once) to run the updated system."
 msgstr "设备现在重启。默认启动的是 Android，所以会进入 Android：请从网页安装器再次启动 Linux（重启进入 Linux 一次）以运行更新后的系统。"
+
+# NFC tap-to-connect (openwrt/nfc/nfc.js)
+
+msgid "NFC tap-to-connect"
+msgstr "NFC 连接"
+
+msgid "Tag"
+msgstr "标签"
+
+msgid "A phone held to the back of the device reads the name and key of the hotspot from the NFC tag and joins. The tag follows the hotspot: its name, key, encryption and on/off. Off leaves an empty tag."
+msgstr "手机贴近设备背面时，会从 NFC 标签读取热点名称和密码并加入。标签跟随热点：名称、密码、加密方式和开关。关闭后标签为空。"
+
+msgid "Hotspot credential (open network)"
+msgstr "热点凭据（开放网络）"
+
+msgid "Hotspot credential (WPA2)"
+msgstr "热点凭据（WPA2）"
+
+msgid "Empty (NFC is off)"
+msgstr "空（NFC 已关闭）"
+
+msgid "Empty (the hotspot is off)"
+msgstr "空（热点已关闭）"
+
+msgid "Empty (phones take WPA2 or WPA2/WPA3 mixed from a tag; the hotspot uses something else)"
+msgstr "空（手机只接受标签中的 WPA2 或 WPA2/WPA3 混合；热点使用了其他加密方式）"
+
+msgid "No tag reachable"
+msgstr "找不到标签"
+
+msgid "The last update failed"
+msgstr "上次更新失败"
+
+msgid "Unsupported"
+msgstr "不支持"
+
+msgid "The tag was not updated; the hotspot is unchanged"
+msgstr "标签未更新；热点未改变"
+
+msgid "The NFC adapter gave no valid reply"
+msgstr "NFC 适配器没有返回有效回复"

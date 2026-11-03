@@ -1,0 +1,38 @@
+#!/bin/sh
+# rpcd object "mu5358nfc" (/usr/libexec/rpcd/mu5358nfc): the control panel's handle on NFC tap-to-connect, through
+# /opt/mu5358/bin/mu5358-nfc-sync (openwrt/nfc). ACL: openwrt/nfc/acl-mu5358nfc.json. Tests: tests/test_nfc.py Rpcd.
+#   get                 {"ok":1,"state":"on|off","supported":0|1,"result":"open|wpa2|disabled|hotspot_off|unsupported|no_tag|error|"}
+#   set {"value":"on|off"}  → {"ok":1} or {"ok":0,"error":"nfc_value|nfc_failed"}
+# The argument is read with sed from the one compact JSON object rpcd hands over and checked against an allow-list:
+# nothing from the request reaches a command line unchecked. The reply never holds the SSID or the key.
+set -u
+SYNC=${MU5358_NFC_SYNC:-/opt/mu5358/bin/mu5358-nfc-sync}
+RUN=${MU5358_NFC_RUN:-/run/mu5358}
+
+case ${1:-} in
+    list)
+        echo '{"get":{},"set":{"value":"str"}}' ;;
+    call)
+        case ${2:-} in
+            get)
+                state=$("$SYNC" state 2>/dev/null); case $state in on|off) ;; *) state=on ;; esac
+                supported=0; "$SYNC" supported >/dev/null 2>&1 && supported=1
+                result=$(head -n 1 "$RUN/nfc-result" 2>/dev/null | tr -d '\r')
+                case $result in open|wpa2|disabled|hotspot_off|unsupported|no_tag|error) ;; *) result= ;; esac
+                printf '{"ok":1,"state":"%s","supported":%s,"result":"%s"}\n' "$state" "$supported" "$result" ;;
+            set)
+                value=$(cat | tr -d '\n\r' | sed -n 's/.*"value"[[:space:]]*:[[:space:]]*"\([a-z]*\)".*/\1/p' | head -n 1)
+                case $value in
+                    on|off) ;;
+                    *) echo '{"ok":0,"error":"nfc_value"}'; exit 0 ;;
+                esac
+                if "$SYNC" "$value" >/dev/null 2>&1; then
+                    echo '{"ok":1}'
+                else
+                    echo '{"ok":0,"error":"nfc_failed"}'
+                fi ;;
+            *) echo '{"ok":0,"error":"nfc_method"}' ;;
+        esac ;;
+    *) echo "usage: $0 list | call get|set" >&2; exit 1 ;;
+esac
+exit 0

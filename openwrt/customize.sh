@@ -364,6 +364,9 @@ cp "$N/mu5358-nfc.init" "$R/etc/init.d/mu5358-nfc" && chmod 755 "$R/etc/init.d/m
 ln -sf ../init.d/mu5358-nfc "$R/etc/rc.d/S95mu5358-nfc"
 mkdir -p "$R/etc/hotplug.d/iface"
 cp "$N/95-mu5358-nfc.hotplug" "$R/etc/hotplug.d/iface/95-mu5358-nfc" && chmod 755 "$R/etc/hotplug.d/iface/95-mu5358-nfc"
+cp "$N/rpcd-mu5358nfc" "$R/usr/libexec/rpcd/mu5358nfc" && chmod 755 "$R/usr/libexec/rpcd/mu5358nfc"
+cp "$N/acl-mu5358nfc.json" "$R/usr/share/rpcd/acl.d/luci-app-mu5358-nfc.json"
+mkdir -p "$R/www/luci-static/resources/mu5358" && cp "$N/nfc.js" "$R/www/luci-static/resources/mu5358/nfc.js"
 
 # The buttons (2026-10-30), from mu300's mu5358-keys (presses as text lines): the board has no LEDs (a screen, later),
 # so mu300-buttons' LED logic does not fit. gpio-keys: power 116, volume 114/115, "Wifi Switch Key" 102.
@@ -614,6 +617,11 @@ f="$R/www/luci-static/resources/view/mu5358/device.js"
 if [ -f "$f" ] && ! grep -q 'mu5358: USB disk' "$f"; then
     grep -q '^[[:space:]]*this.root = root;$' "$f" || { echo "$f: no this.root line to patch" >&2; exit 1; }
     sed -i 's@^\([[:space:]]*\)this.root = root;$@&\n\1/* mu5358: USB disk card in, the role and adapter cards out (customize.sh) */\n\1root.querySelector(".mud-device-grid > section").style.display = "none";\n\1root.querySelector("#mud-usb-adapters-card").style.display = "none";\n\1L.require("mu5358.usb-storage").then(function(m) { m.render(root, root.querySelector(".mud-device-grid")); });@' "$f"
+fi
+# The NFC card (openwrt/nfc/nfc.js, rpcd mu5358nfc) after the USB disk card
+if [ -f "$f" ] && ! grep -q 'mu5358: NFC card' "$f"; then
+    grep -q 'L.require("mu5358.usb-storage")' "$f" || { echo "$f: no usb-storage line to patch" >&2; exit 1; }
+    sed -i 's@^\([[:space:]]*\)L.require("mu5358.usb-storage").*$@&\n\1/* mu5358: NFC card (customize.sh) */\n\1L.require("mu5358.nfc").then(function(m) { m.render(root, root.querySelector(".mud-device-grid")); });@' "$f"
 fi
 # The hotspot watched (openwrt/wifiwatch, after mu300's wifiretry): three misses of hostapd or wlan0 in a row bring
 # the radio back with wifi up, at most once in 10 minutes

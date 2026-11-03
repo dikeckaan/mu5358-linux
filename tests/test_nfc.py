@@ -1,5 +1,6 @@
 """NFC tap-to-connect (docs/superpowers/specs/2026-11-03-kano-safe-package-design.md): the tag tool mu5358-nfc against a
 file-backed i2c device (tests/fixtures/nfc_i2c.c, compiled with ASan in the build image), never the hardware."""
+import json
 import os
 import shutil
 import struct
@@ -337,6 +338,82 @@ class Sync(unittest.TestCase):
         self.assertEqual(self.argv(), [], 'the AP on another network: lan is not it')
         self.sh('export ACTION=ifup INTERFACE=guest; sh /w/openwrt/nfc/95-mu5358-nfc.hotplug')
         self.assertEqual(len(self.argv()), 1)
+
+
+RPCD = TOP / 'openwrt/nfc/rpcd-mu5358nfc'
+ACL = TOP / 'openwrt/nfc/acl-mu5358nfc.json'
+RECORDER = """#!/bin/sh
+# mu5358-nfc-sync stand-in: records its arguments, answers state/supported from files
+printf '%s\\n' "$*" >> "$STUBLOG"
+case $1 in
+    state) cat "$STUB_STATE" ;;
+    supported) exit "$(cat "$STUB_SUPPORTED")" ;;
+esac
+exit "${STUB_RC:-0}"
+"""
+
+
+class Rpcd(unittest.TestCase):
+    """The rpcd object mu5358nfc (openwrt/nfc/rpcd-mu5358nfc) over a recorded stand-in for mu5358-nfc-sync."""
+
+    def setUp(self):
+        self.t = Path(tempfile.mkdtemp(prefix='mu5358-nfc-rpcd-'))
+        self.addCleanup(shutil.rmtree, self.t, ignore_errors=True)
+        (self.t / 'run').mkdir()
+        self.sync = self.t / 'mu5358-nfc-sync'
+        self.sync.write_text(RECORDER)
+        self.sync.chmod(0o755)
+        self.log = self.t / 'stub.log'
+        (self.t / 'state').write_text('on\n')
+        (self.t / 'supported').write_text('0')
+        (self.t / 'run/nfc-result').write_text('wpa2\n')
+        self.env = dict(os.environ, MU5358_NFC_SYNC=str(self.sync), MU5358_NFC_RUN=str(self.t / 'run'), STUBLOG=str(self.log),
+                        STUB_STATE=str(self.t / 'state'), STUB_SUPPORTED=str(self.t / 'supported'))
+
+    def rpc(self, *args, stdin=None):
+        r = subprocess.run(['sh', str(RPCD), *args], env=self.env, capture_output=True, text=True, input=stdin, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def calls(self):
+        return self.log.read_text().splitlines() if self.log.exists() else []
+
+    def test_list(self):
+        self.assertEqual(self.rpc('list'), {'get': {}, 'set': {'value': 'str'}})
+
+    def test_get(self):
+        self.assertEqual(self.rpc('call', 'get'), {'ok': 1, 'state': 'on', 'supported': 1, 'result': 'wpa2'})
+        (self.t / 'state').write_text('off\n')
+        (self.t / 'supported').write_text('1')
+        (self.t / 'run/nfc-result').unlink()
+        self.assertEqual(self.rpc('call', 'get'), {'ok': 1, 'state': 'off', 'supported': 0, 'result': ''})
+        (self.t / 'run/nfc-result').write_text('weird words here\n')
+        self.assertEqual(self.rpc('call', 'get')['result'], '', 'only the known words pass')
+
+    def test_set_runs_the_sync(self):
+        out = self.rpc('call', 'set', stdin='{"value":"off"}')
+        self.assertEqual(out, {'ok': 1})
+        self.assertEqual(self.calls(), ['off'])
+        self.rpc('call', 'set', stdin='{ "value": "on" }')
+        self.assertEqual(self.calls(), ['off', 'on'])
+
+    def test_refuses_what_is_not_allowed(self):
+        for body in ('{"value":"on; reboot"}', '{"value":"toggle"}', '{"value":"sync"}', '{"kind":"on"}', 'garbage', ''):
+            out = self.rpc('call', 'set', stdin=body)
+            self.assertEqual(out['ok'], 0, body)
+            self.assertEqual(out['error'], 'nfc_value')
+        self.assertEqual(self.calls(), [])
+
+    def test_a_failed_sync_is_an_error(self):
+        self.env['STUB_RC'] = '1'
+        out = self.rpc('call', 'set', stdin='{"value":"on"}')
+        self.assertEqual(out['ok'], 0)
+        self.assertEqual(out['error'], 'nfc_failed')
+
+    def test_acl_names_the_methods(self):
+        acl = json.loads(ACL.read_text())
+        self.assertEqual(acl['luci-app-mu5358']['read']['ubus']['mu5358nfc'], ['get'])
+        self.assertEqual(acl['luci-app-mu5358']['write']['ubus']['mu5358nfc'], ['set'])
 
 
 if __name__ == '__main__':

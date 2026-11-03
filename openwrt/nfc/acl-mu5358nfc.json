@@ -1,0 +1,15 @@
+{
+	"luci-app-mu5358": {
+		"description": "NFC tap-to-connect (mu5358nfc)",
+		"read": {
+			"ubus": {
+				"mu5358nfc": [ "get" ]
+			}
+		},
+		"write": {
+			"ubus": {
+				"mu5358nfc": [ "set" ]
+			}
+		}
+	}
+}

@@ -585,6 +585,25 @@ class Nfc(unittest.TestCase):
         self.assertIn('tools/nfc/mu5358-nfc', (TOP / 'tools/make-release.sh').read_text(encoding='utf-8'))
         self.assertIn('tools/nfc/build.sh', (TOP / 'tools/ci-release.sh').read_text(encoding='utf-8'))
 
+    def test_panel_card(self):
+        """The NFC card on System > Device: shipped, injected after the USB disk card, its strings translated, no SSID."""
+        c = self.CUSTOMIZE
+        self.assertIn('cp "$N/rpcd-mu5358nfc" "$R/usr/libexec/rpcd/mu5358nfc"', c)
+        self.assertIn('cp "$N/acl-mu5358nfc.json" "$R/usr/share/rpcd/acl.d/luci-app-mu5358-nfc.json"', c)
+        self.assertIn('cp "$N/nfc.js" "$R/www/luci-static/resources/mu5358/nfc.js"', c)
+        i = c.index('mu5358: NFC card')
+        self.assertIn('L.require("mu5358.nfc")', c[i:i + 600])
+        js = (TOP / 'openwrt/nfc/nfc.js').read_text(encoding='utf-8')
+        self.assertIn("rpc.declare({ object: 'mu5358nfc', method: 'get'", js)
+        self.assertNotIn('ssid', js.lower())
+        strings = re.findall(r"_\('((?:[^'\\]|\\.)*)'\)", js)
+        self.assertGreater(len(strings), 8)
+        for po in Usb.PO:
+            pairs = Usb.po_pairs(po)
+            for s_ in strings:
+                with self.subTest(po=po.parent.name, s=s_[:40]):
+                    self.assertTrue(pairs.get(s_), f'{s_!r} has no translation in {rel(po)}')
+
     def test_screen_row(self):
         """u30ui2's Wi-Fi page: the NFC row (on, off, unsupported), its tap toggles through mu5358-nfc-sync."""
         i18n = (TOP / 'tools/u30ui2/i18n.h').read_text(encoding='utf-8')

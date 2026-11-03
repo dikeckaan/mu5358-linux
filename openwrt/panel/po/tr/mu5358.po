@@ -4358,3 +4358,44 @@ msgstr "Boyut en az 64 MiB olmalı"
 
 msgid "The device restarts now. The default boot is Android, so it starts Android: start Linux again from the web installer (Restart into Linux once) to run the updated system."
 msgstr "Cihaz şimdi yeniden başlıyor. Varsayılan açılış Android olduğu için Android açılır: güncellenen sistemi çalıştırmak için Linux'u web kurucudan yeniden başlatın (Linux'a bir kez yeniden başlat)."
+
+# NFC tap-to-connect (openwrt/nfc/nfc.js)
+
+msgid "NFC tap-to-connect"
+msgstr "NFC ile bağlan"
+
+msgid "Tag"
+msgstr "Etiket"
+
+msgid "A phone held to the back of the device reads the name and key of the hotspot from the NFC tag and joins. The tag follows the hotspot: its name, key, encryption and on/off. Off leaves an empty tag."
+msgstr "Cihazın arkasına tutulan bir telefon hotspot adını ve parolasını NFC etiketinden okur ve bağlanır. Etiket hotspotu izler: adı, parolası, şifrelemesi ve açık/kapalı durumu. Kapalı iken etiket boş kalır."
+
+msgid "Hotspot credential (open network)"
+msgstr "Hotspot bilgisi (açık ağ)"
+
+msgid "Hotspot credential (WPA2)"
+msgstr "Hotspot bilgisi (WPA2)"
+
+msgid "Empty (NFC is off)"
+msgstr "Boş (NFC kapalı)"
+
+msgid "Empty (the hotspot is off)"
+msgstr "Boş (hotspot kapalı)"
+
+msgid "Empty (phones take WPA2 or WPA2/WPA3 mixed from a tag; the hotspot uses something else)"
+msgstr "Boş (telefonlar etiketten yalnızca WPA2 ya da WPA2/WPA3 karışık alır; hotspot başka bir şifreleme kullanıyor)"
+
+msgid "No tag reachable"
+msgstr "Etikete ulaşılamıyor"
+
+msgid "The last update failed"
+msgstr "Son güncelleme başarısız oldu"
+
+msgid "Unsupported"
+msgstr "Desteklenmiyor"
+
+msgid "The tag was not updated; the hotspot is unchanged"
+msgstr "Etiket güncellenmedi; hotspot değişmedi"
+
+msgid "The NFC adapter gave no valid reply"
+msgstr "NFC bağdaştırıcısı geçerli bir yanıt vermedi"
