@@ -282,24 +282,22 @@ policy_now() {
     case $(sel "$TYPEC/port_type") in dual) echo auto ;; source) echo host ;; sink) echo device ;; *) echo unavailable ;; esac
 }
 host_capable() { [ "$(cat "$MUSB/musb_hostenable" 2>/dev/null)" = enabled ] && echo yes || echo no; }
-port_type_ok() { [ -w "$TYPEC/port_type" ] && [ -n "$(sel "$TYPEC/port_type")" ]; }
+# the write decides whether port_type is the handle: root passes a -w test on any sysfs attribute, and a kernel whose
+# driver has no port_type_set refuses the write with the mode bits saying nothing
+policy_write() { [ -e "$TYPEC/port_type" ] && printf '%s\n' "$1" > "$TYPEC/port_type" 2>/dev/null; }
 role() {  # role auto|host|device
     [ -e "$TYPEC/data_role" ] || die "no USB-C port controller to ask ($TYPEC/data_role)"
     mkdir -p "$RUN"; rm -f "$RUN/usb-host-keep"   # only a keep file made after this change counts (/run outlives a reboot here)
     if [ "$1" != host ]; then
-        if port_type_ok; then
-            _t=dual; [ "$1" = auto ] || _t=sink
-            printf '%s\n' "$_t" > "$TYPEC/port_type" 2>/dev/null || die "the port controller refused the policy $_t"
-        elif [ "$1" = device ]; then
+        if [ "$1" = auto ]; then
+            policy_write dual || die "the port controller took no policy: auto is not available on this kernel (device and host are)"
+        elif ! policy_write sink; then
             printf '%s\n' device > "$TYPEC/data_role" 2>/dev/null || die "the port controller refused the swap to device"
-        else
-            die "no writable port_type: the policy auto is not available on this kernel (device and host are)"
         fi
         echo "USB: $1 (the network link and the console to the computer)"
         return 0
     fi
-    if port_type_ok; then
-        printf '%s\n' source > "$TYPEC/port_type" 2>/dev/null || die "the port controller refused the policy source"
+    if policy_write source; then
         _back=dual; _file=$TYPEC/port_type
     else
         printf '%s\n' host > "$TYPEC/data_role" 2>/dev/null ||

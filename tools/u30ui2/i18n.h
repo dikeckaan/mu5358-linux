@@ -95,7 +95,6 @@ enum { L_EN, L_TR, L_ZH, NLANG };
 	X(S_USB_DRIVE, "USB drive", "USB bellek", "U 盘") \
 	X(S_NFC, "NFC tap-to-connect", "NFC ile bağlan", "NFC 连接") \
 	X(S_UNSUPPORTED, "Unsupported", "Desteklenmiyor", "不支持") \
-	X(S_NFC_WRITTEN, "NFC: hotspot written", "NFC: hotspot yazıldı", "NFC 已写入") \
 	X(S_NFC_FAILED, "NFC failed", "NFC başarısız", "NFC 失败") \
 	X(S_RESTART, "Restart → Android", "Yeniden başlat → Android", "重启 → Android") \
 	X(S_POWER_OFF, "Power off", "Kapat", "关机") \

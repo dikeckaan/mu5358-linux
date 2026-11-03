@@ -75,7 +75,8 @@ class Sim(unittest.TestCase):
         return r.stdout
 
     def states(self, out):
-        return [dict(kv.split('=', 1) for kv in line.split()[1:]) for line in out.splitlines() if line.startswith('STATE ')]
+        # k=v pairs; the last one (nfc=) may hold spaces
+        return [dict(kv.split('=', 1) for kv in line[6:].split(' ', 8)) for line in out.splitlines() if line.startswith('STATE ')]
 
     def runs(self, out):
         return [line[4:] for line in out.splitlines() if line.startswith('RUN ')]
@@ -115,8 +116,13 @@ class Sim(unittest.TestCase):
         self.assertEqual((s[1]['screen'], s[1]['locked']), ('off', '1'))
 
     def test_nfc_row_toggles(self):
-        out = self.run_sim('set lock off\npage wifi\nset nfc 1\ntap 120 142\nset nfc 2\ntap 120 142\nwait 100\n')
-        self.assertEqual(self.runs(out), ['/opt/mu5358/bin/mu5358-nfc-sync toggle'])
+        out = self.run_sim('set lock off\npage wifi\nset nfc 1\ntap 120 131\ntap 120 142\nset nfc 2\ntap 120 142\nwait 100\n')
+        self.assertEqual(self.runs(out), ['/opt/mu5358/bin/mu5358-nfc-sync toggle'], 'the clients line (y 131) is not the row')
+
+    def test_nfc_row_shows_the_result(self):
+        out = self.run_sim('page wifi\nset nfc 1\nset nfc_result wpa2\nstate\nset nfc_result error\nstate\nset nfc_result no_tag\nstate\n'
+                           'set nfc_result unsupported\nstate\nset nfc 0\nset nfc_result disabled\nstate\nset nfc 2\nstate\n')
+        self.assertEqual([s['nfc'] for s in self.states(out)], ['On', 'NFC failed', 'NFC failed', 'Unsupported', 'Off', 'Unsupported'])
 
     def test_unknown_command_fails(self):
         self.run_sim('page home\nbogus 1 2\n', want_rc=2)

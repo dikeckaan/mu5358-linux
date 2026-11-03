@@ -135,6 +135,7 @@ static int set_field(const char *f, const char *v)
 	else if (!strcmp(f, "signal")) D.bars = n;
 	else if (!strcmp(f, "nsms")) D.nsms = n;
 	else if (!strcmp(f, "update")) snprintf(D.update, sizeof(D.update), "%s", strcmp(v, "-") ? v : "");
+	else if (!strcmp(f, "nfc_result")) snprintf(D.nfc_result, sizeof(D.nfc_result), "%s", strcmp(v, "-") ? v : "");
 	else return 0;
 	bump();
 	return 1;
@@ -142,9 +143,13 @@ static int set_field(const char *f, const char *v)
 
 static void state(void)
 {
-	printf("STATE page=%s screen=%s locked=%d lang=%s timeout=%d dragging=%d settle=%d hold=%d\n", page_names[page],
-	       sim_screen ? "on" : "off", locked, lang == L_TR ? "tr" : lang == L_ZH ? "zh" : "en", timeout_s, dragging,
-	       settle_t0 ? 1 : 0, hold_row);
+	int l = lang;
+
+	lang = L_EN;	/* the labels in English whatever the page's language */
+	printf("STATE page=%s screen=%s locked=%d lang=%s timeout=%d dragging=%d settle=%d hold=%d nfc=%s\n", page_names[page],
+	       sim_screen ? "on" : "off", locked, l == L_TR ? "tr" : l == L_ZH ? "zh" : "en", timeout_s, dragging,
+	       settle_t0 ? 1 : 0, hold_row, T(nfc_label()));
+	lang = l;
 	fflush(stdout);
 }
 

@@ -188,6 +188,11 @@ int display_init(void (*first)(void))
 	if (ioctl(fd, DRM_IOCTL_MODE_SETCRTC, &crtc))
 		return -1;
 	fprintf(stderr, "u30ui: panel %ux%u\n", fbw, fbh);
+	/* and once more after it: should the driver's enable path send the panel's init sequence (MADCTL back to 0,
+	 * as its ESD recovery does), the picture is turned again; one SPI write, idempotent. The worst case is then
+	 * one frame upside down, never a picture that stays so (review 2026-11-03) */
+	if (!getenv("U30UI_PANEL_ROT") || atoi(getenv("U30UI_PANEL_ROT")))
+		panel_turn();
 	return 0;
 }
 

@@ -452,6 +452,20 @@ static void draw_wifi_qr(void)
 	gfx_text(FONT_REGULAR, 10, 120, TOP(206, 10), ALIGN_CENTER, K_DIM, T(S_SCAN_TO_JOIN));
 }
 
+/* the NFC row's value: the switch, then what the last sync wrote (/run/mu5358/nfc-result) */
+static int nfc_label(void)
+{
+	if (S.nfc == 2)
+		return S_UNSUPPORTED;
+	if (!S.nfc)
+		return S_OFF;
+	if (!strcmp(S.nfc_result, "error") || !strcmp(S.nfc_result, "no_tag"))
+		return S_NFC_FAILED;
+	if (!strcmp(S.nfc_result, "unsupported"))
+		return S_UNSUPPORTED;
+	return S_ON;
+}
+
 static void draw_wifi(void)
 {
 	char b[80];
@@ -473,8 +487,8 @@ static void draw_wifi(void)
 	else
 		snprintf(b, sizeof(b), T(S_N_CLIENTS), S.nclients);
 	gfx_text(FONT_REGULAR, 10, 120, TOP(128, 10), ALIGN_CENTER, K_DIM, b);
-	/* NFC tap-to-connect (mu5358-nfc-sync): a tap on the row toggles it */
-	row(142, T(S_NFC), T(S.nfc == 2 ? S_UNSUPPORTED : S.nfc ? S_ON : S_OFF), S.nfc == 1 ? K_ACC : K_DIM);
+	/* NFC tap-to-connect (mu5358-nfc-sync): a tap on the row toggles it; the value is the last sync's result */
+	row(142, T(S_NFC), T(nfc_label()), nfc_label() == S_NFC_FAILED ? K_ERR : nfc_label() == S_ON ? K_ACC : K_DIM);
 	hairline(152);
 	row(166, T(S_PASSWORD), wifi_show_key ? S.key : "••••••••", K_FG);
 	/* two buttons: the hotspot switch and the QR code */
@@ -945,7 +959,7 @@ static void gesture(struct gesture *g, long now)
 			break;
 		if (wifi_qr)
 			wifi_qr = 0;
-		else if (g->y >= 130 && g->y < 154) {
+		else if (g->y >= 134 && g->y < 154) {	/* the row (142); the clients line ends at 133 */
 			if (S.nfc != 2)
 				data_run("/opt/mu5358/bin/mu5358-nfc-sync toggle");
 		} else if (g->y >= 156 && g->y < 180)

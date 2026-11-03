@@ -626,9 +626,11 @@ class Nfc(unittest.TestCase):
         """u30ui2's Wi-Fi page: the NFC row (on, off, unsupported), its tap toggles through mu5358-nfc-sync."""
         i18n = (TOP / 'tools/u30ui2/i18n.h').read_text(encoding='utf-8')
         for s_ in ('X(S_NFC, "NFC tap-to-connect", "NFC ile bağlan", "NFC 连接")', 'X(S_UNSUPPORTED, "Unsupported", "Desteklenmiyor", "不支持")',
-                   'X(S_NFC_WRITTEN,', 'X(S_NFC_FAILED,'):
+                   'X(S_NFC_FAILED,'):
             self.assertIn(s_, i18n)
+        self.assertNotIn('S_NFC_WRITTEN', i18n, 'no dead string')
         ui = (TOP / 'tools/u30ui2/ui.c').read_text(encoding='utf-8')
+        self.assertIn('S.nfc_result', ui, 'the row shows the last sync\'s result')
         self.assertIn('"/opt/mu5358/bin/mu5358-nfc-sync toggle"', ui)
         self.assertIn('T(S_NFC)', ui)
         data = (TOP / 'tools/u30ui2/data.c').read_text(encoding='utf-8')
@@ -679,6 +681,7 @@ class Screen(unittest.TestCase):
         body = body[:body.index('\n}\n')]
         self.assertLess(body.index('first('), body.index('DRM_IOCTL_MODE_SETCRTC'), 'the first frame before the mode-set')
         self.assertLess(body.index('panel_turn()'), body.index('DRM_IOCTL_MODE_SETCRTC'), 'the turn before the mode-set')
+        self.assertGreater(body.rindex('panel_turn()'), body.index('DRM_IOCTL_MODE_SETCRTC'), 'and after it: the driver may re-init the panel')
         for rel in ('tools/u30ui2/ui.c', 'tools/u30ui/ui.c', 'tools/u30ui2/preview.c', 'tools/u30ui2/sim.c'):
             t = (TOP / rel).read_text(encoding='utf-8')
             self.assertRegex(t, r'display_init\((first_frame|NULL|void \(\*first\)\(void\))\)', rel)

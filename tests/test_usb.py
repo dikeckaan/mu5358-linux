@@ -593,6 +593,20 @@ class Policy(Base):
         time.sleep(2.5)
         self.assertEqual((self.typec / 'data_role').read_text().strip(), 'device')
 
+    def test_host_falls_back_when_the_write_fails(self):
+        # root passes -w on any sysfs attribute (CAP_DAC_OVERRIDE), an older kernel's read-only port_type refuses the
+        # write: the fallback must follow the write's failure, not the mode bits
+        (self.typec / 'port_type').unlink()
+        (self.typec / 'port_type').mkdir()
+        r = self.usb('host')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual((self.typec / 'data_role').read_text().strip(), 'host')
+        r = self.usb('device')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual((self.typec / 'data_role').read_text().strip(), 'device')
+        self.assertEqual(self.usb('auto').returncode, 1, 'auto has no fallback')
+        self.assertNotIn('-w "$TYPEC/port_type"', USB.read_text(encoding='utf-8'), 'the write decides, never a -w test')
+
     def test_status_reports_policy_and_host_capable(self):
         out = self.usb('status').stdout
         self.assertIn('policy: auto\n', out)
