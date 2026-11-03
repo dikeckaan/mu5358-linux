@@ -114,3 +114,17 @@ def docker_busybox():
             why = f'docker: {e}'
     _docker_state['why'] = why
     return why
+
+
+def docker_image_ready(image):
+    """'' when docker can run IMAGE here (a local build image: never pulled), else why not (the skip reason)."""
+    key = 'image:' + image
+    if key in _docker_state:
+        return _docker_state[key]
+    why = docker_busybox()
+    if not why:
+        r = subprocess.run([DOCKER, 'image', 'inspect', image], capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            why = f'no local docker image {image}'
+    _docker_state[key] = why
+    return why
