@@ -238,6 +238,22 @@ static void collect_fast(struct data *d, double dt)
 			d->usb_storage = 1;
 		fclose(f);
 	}
+	/* NFC tap-to-connect: the switch file (absent = on), the tool and the bus, the last sync's word */
+	d->nfc = 1;
+	if ((f = fopen("/etc/mu5358/nfc", "r"))) {
+		char w[8] = "";
+		if (fscanf(f, "%7s", w) == 1 && !strcmp(w, "off"))
+			d->nfc = 0;
+		fclose(f);
+	}
+	if (access("/opt/mu5358/bin/mu5358-nfc", X_OK) || access("/dev/i2c-4", F_OK))
+		d->nfc = 2;
+	d->nfc_result[0] = 0;
+	if ((f = fopen("/run/mu5358/nfc-result", "r"))) {
+		if (fscanf(f, "%15s", d->nfc_result) != 1)
+			d->nfc_result[0] = 0;
+		fclose(f);
+	}
 	reads("/proc/uptime", b, sizeof(b));
 	d->uptime_s = atol(b);
 	reads("/proc/loadavg", b, sizeof(b));

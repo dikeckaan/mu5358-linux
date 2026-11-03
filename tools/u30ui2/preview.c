@@ -67,7 +67,7 @@ int main(void)
 		S.sig_hist[i] = (signed char)(-101 + (int)(6 * __builtin_sin(i / 5.0)));
 	S.wifi_on = 1; S.channel = 36; S.width_mhz = 80; S.band_ghz = 5;
 	strcpy(S.ssid, "U30Pro-5AB8"); strcpy(S.key, "example-pass1"); strcpy(S.wifi_mac, "02:00:00:00:00:01");
-	S.nclients = 2;
+	S.nclients = 2; S.nfc = 1;
 	strcpy(S.clients[0].mac, "02:00:00:00:00:11"); strcpy(S.clients[0].ip, "192.168.58.200");
 	strcpy(S.clients[0].name, "MacBook"); S.clients[0].rx = 50000000; S.clients[0].tx = 820000000; S.clients[0].signal = -52;
 	strcpy(S.clients[1].mac, "02:00:00:00:00:12"); strcpy(S.clients[1].ip, "192.168.58.201");

@@ -461,12 +461,14 @@ static void draw_wifi(void)
 		snprintf(b, sizeof(b), "%d GHz · %s %d · %d MHz", S.band_ghz, T(S_CHANNEL), S.channel, S.width_mhz);
 	else
 		snprintf(b, sizeof(b), "%s", T(S.wifi_on ? S_ON : S_OFF));
-	gfx_text(FONT_REGULAR, 10, 120, TOP(120, 10), ALIGN_CENTER, K_DIM, b);
+	gfx_text(FONT_REGULAR, 10, 120, TOP(116, 10), ALIGN_CENTER, K_DIM, b);
 	if (S.nclients == 1)
 		snprintf(b, sizeof(b), "%s", T(S_ONE_CLIENT));
 	else
 		snprintf(b, sizeof(b), T(S_N_CLIENTS), S.nclients);
-	gfx_text(FONT_REGULAR, 10, 120, TOP(134, 10), ALIGN_CENTER, K_DIM, b);
+	gfx_text(FONT_REGULAR, 10, 120, TOP(128, 10), ALIGN_CENTER, K_DIM, b);
+	/* NFC tap-to-connect (mu5358-nfc-sync): a tap on the row toggles it */
+	row(142, T(S_NFC), T(S.nfc == 2 ? S_UNSUPPORTED : S.nfc ? S_ON : S_OFF), S.nfc == 1 ? K_ACC : K_DIM);
 	hairline(152);
 	row(166, T(S_PASSWORD), wifi_show_key ? S.key : "••••••••", K_FG);
 	/* two buttons: the hotspot switch and the QR code */
@@ -915,7 +917,10 @@ static void gesture(struct gesture *g, long now)
 			break;
 		if (wifi_qr)
 			wifi_qr = 0;
-		else if (g->y >= 156 && g->y < 180)
+		else if (g->y >= 130 && g->y < 154) {
+			if (S.nfc != 2)
+				data_run("/opt/mu5358/bin/mu5358-nfc-sync toggle");
+		} else if (g->y >= 156 && g->y < 180)
 			wifi_show_key = !wifi_show_key;
 		else if (g->y >= 180 && g->x < 120)
 			data_run(S.wifi_on ? "uci set wireless.ap0.disabled=1; uci commit wireless; wifi reload; /opt/mu5358/bin/mu5358-nfc-sync sync"

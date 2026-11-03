@@ -585,6 +585,51 @@ class Nfc(unittest.TestCase):
         self.assertIn('tools/nfc/mu5358-nfc', (TOP / 'tools/make-release.sh').read_text(encoding='utf-8'))
         self.assertIn('tools/nfc/build.sh', (TOP / 'tools/ci-release.sh').read_text(encoding='utf-8'))
 
+    def test_screen_row(self):
+        """u30ui2's Wi-Fi page: the NFC row (on, off, unsupported), its tap toggles through mu5358-nfc-sync."""
+        i18n = (TOP / 'tools/u30ui2/i18n.h').read_text(encoding='utf-8')
+        for s_ in ('X(S_NFC, "NFC tap-to-connect", "NFC ile bağlan", "NFC 连接")', 'X(S_UNSUPPORTED, "Unsupported", "Desteklenmiyor", "不支持")',
+                   'X(S_NFC_WRITTEN,', 'X(S_NFC_FAILED,'):
+            self.assertIn(s_, i18n)
+        ui = (TOP / 'tools/u30ui2/ui.c').read_text(encoding='utf-8')
+        self.assertIn('"/opt/mu5358/bin/mu5358-nfc-sync toggle"', ui)
+        self.assertIn('T(S_NFC)', ui)
+        data = (TOP / 'tools/u30ui2/data.c').read_text(encoding='utf-8')
+        for s_ in ('/etc/mu5358/nfc', '/run/mu5358/nfc-result', '/opt/mu5358/bin/mu5358-nfc', '/dev/i2c-4'):
+            self.assertIn(s_, data)
+        h = (TOP / 'tools/u30ui2/data.h').read_text(encoding='utf-8')
+        self.assertIn('int nfc;', h)
+        self.assertIn('char nfc_result[16];', h)
+
+    def test_font_subset_has_every_cjk_character(self):
+        """mkfont.sh was run after the strings changed: every non-ASCII character of i18n.h has a glyph in font_cjk.h."""
+        import struct
+        # Roboto draws the Latin letters (Turkish included); the CJK subset is for everything from U+2E80 on
+        want = {ord(c) for c in (TOP / 'tools/u30ui2/i18n.h').read_text(encoding='utf-8') if ord(c) >= 0x2e80}
+        font = (TOP / 'tools/u30ui2/font_cjk.h').read_text(encoding='utf-8')
+        body = font[font.index('noto_sc_400[] = {') + len('noto_sc_400[] = {'):font.index('};')]
+        ttf = bytes(int(x) for x in body.replace('\n', '').split(',') if x.strip())
+        n = struct.unpack('>H', ttf[4:6])[0]
+        tables = {ttf[12 + 16 * i:16 + 16 * i]: struct.unpack('>II', ttf[20 + 16 * i:28 + 16 * i]) for i in range(n)}
+        off = tables[b'cmap'][0]
+        have = set()
+        for i in range(struct.unpack('>H', ttf[off + 2:off + 4])[0]):
+            sub = off + struct.unpack('>I', ttf[off + 8 + 8 * i:off + 12 + 8 * i])[0]
+            fmt = struct.unpack('>H', ttf[sub:sub + 2])[0]
+            if fmt == 4:
+                segx2 = struct.unpack('>H', ttf[sub + 6:sub + 8])[0]
+                ends = struct.unpack('>%dH' % (segx2 // 2), ttf[sub + 14:sub + 14 + segx2])
+                starts = struct.unpack('>%dH' % (segx2 // 2), ttf[sub + 16 + segx2:sub + 16 + 2 * segx2])
+                for a, b in zip(starts, ends):
+                    have |= set(range(a, b + 1))
+            elif fmt == 12:
+                groups = struct.unpack('>I', ttf[sub + 12:sub + 16])[0]
+                for g in range(groups):
+                    a, b, _ = struct.unpack('>III', ttf[sub + 16 + 12 * g:sub + 28 + 12 * g])
+                    have |= set(range(a, b + 1))
+        missing = sorted(want - have)
+        self.assertEqual(missing, [], 'run tools/u30ui2/mkfont.sh: ' + ' '.join('U+%04X' % c for c in missing))
+
 
 class ScreenRadioLabel(unittest.TestCase):
     """+COPS AcT 13 is E-UTRAN-NR dual connectivity (5G NSA, what this network gives): the dashboard labels it 5G as

@@ -55,6 +55,8 @@ struct data {
 	int temp_soc, temp_wcn, temp_pa, temp_bat;	/* degrees C, -1000 unknown */
 	char kernel[40], version[24], update[24];   /* update: the newer release mu5358-update noticed, or "" */
 	int usb_storage;	/* /etc/mu5358/usb-storage says on: the device is a USB flash drive for the computer */
+	int nfc;		/* NFC tap-to-connect (mu5358-nfc-sync): 0 off, 1 on, 2 unsupported (no tool or no i2c-4) */
+	char nfc_result[16];	/* the last sync's word (/run/mu5358/nfc-result): open wpa2 disabled hotspot_off unsupported no_tag error */
 	/* the log, newest last */
 	int nlog;
 	char log[LOGLINES][96];
