@@ -687,6 +687,14 @@ class Screen(unittest.TestCase):
             self.assertRegex(t, r'display_init\((first_frame|NULL|void \(\*first\)\(void\))\)', rel)
         self.assertIn('display_init(first_frame)', (TOP / 'tools/u30ui2/ui.c').read_text(encoding='utf-8'))
 
+    def test_touch_axes_not_mirrored(self):
+        """tools/u30ui/input.c: the panel's coordinates are the picture's (bench 2026-11-03: the taps aimed at the
+        Wi-Fi page's QR button, bottom right, reached the kernel as y 189..215 and, mirrored, landed on the page's top
+        where nothing answers; the fork's u30pro-panel mirrors neither axis). The environment still overrides."""
+        t = (TOP / 'tools/u30ui/input.c').read_text(encoding='utf-8')
+        self.assertRegex(t, r'static int fd = -1, flipx, flipy;', 'both axes straight by default')
+        self.assertIn('U30UI_TOUCH_FLIPY', t)
+
 
 class Buttons(unittest.TestCase):
     """The buttons service (the heredoc in openwrt/customize.sh) under busybox with mu5358-keys, pidof, kill, poweroff

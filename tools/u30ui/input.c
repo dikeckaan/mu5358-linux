@@ -17,9 +17,11 @@
 #define SLOP 12		/* movement that still counts as a tap */
 #define SWIPE 40	/* horizontal travel that is a page swipe */
 
-/* the touch panel against the picture: Y mirrored, X not (the user, 2026-10-30: with both turned left and right
- * were the wrong way round); U30UI_TOUCH_FLIPX / U30UI_TOUCH_FLIPY=0|1 change it */
-static int fd = -1, flipx, flipy = 1;
+/* the touch panel against the picture: neither axis mirrored (the user, 2026-10-30: with both turned left and right
+ * were the wrong way round; bench 2026-11-03: with Y turned the taps aimed at the Wi-Fi page's QR button, bottom
+ * right, arrived as y 189..215 and landed on the page's top, where nothing answers); U30UI_TOUCH_FLIPX /
+ * U30UI_TOUCH_FLIPY=0|1 change it */
+static int fd = -1, flipx, flipy;
 static int xmin, xmax = 239, ymin, ymax = 239;
 static int down, x, y, x0, y0, long_sent, moved;
 static long t0;
