@@ -2,7 +2,8 @@
 # Build u30ui2 (static, aarch64) and its preview (host: every page in the three languages as PNG files with sample
 # data) in mu5358-mainline-build. gfx, icons, display, input, png and qr are tools/u30ui's (the classic UI's),
 # built here with HAVE_CJK for the Chinese glyphs (font_cjk.h, mkfont.sh):
-#   docker run --rm -v "$PWD/tools":/t mu5358-mainline-build bash /t/u30ui2/build.sh [preview]
+#   docker run --rm -v "$PWD/tools":/t mu5358-mainline-build bash /t/u30ui2/build.sh [preview | sim OUT [asan]]
+# sim: the host simulator (sim.c, tests/test_u30ui2.py) at OUT; with "asan" under ASan and UBSan (the fuzz test)
 set -e
 cd /t/u30ui2
 dpkg -s libc6-dev-arm64-cross >/dev/null 2>&1 ||
@@ -10,6 +11,12 @@ dpkg -s libc6-dev-arm64-cross >/dev/null 2>&1 ||
 U=../u30ui
 SHARED="$U/gfx.c $U/icons.c $U/png.c $U/qr.c"
 CFLAGS="-O2 -Wall -Wno-format-truncation -Wno-unused-function -DHAVE_CJK -I$U -I/t/u30ui2"
+if [ "$1" = sim ]; then
+    command -v gcc >/dev/null || { apt-get update -qq && apt-get install -y -qq gcc libc6-dev >/dev/null; }
+    SAN=; [ "$3" = asan ] && SAN="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer"
+    gcc $CFLAGS $SAN -o "$2" sim.c i18n.c $SHARED -lm -lpthread
+    exit 0
+fi
 if [ "$1" = preview ]; then
     command -v gcc >/dev/null || { apt-get update -qq && apt-get install -y -qq gcc libc6-dev >/dev/null; }
     gcc $CFLAGS -o /tmp/u30ui2-preview preview.c i18n.c $SHARED -lm

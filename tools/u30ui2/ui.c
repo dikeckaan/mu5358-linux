@@ -958,12 +958,14 @@ static void gesture(struct gesture *g, long now)
 	}
 }
 
-int main(void)
+/* --- the loop. The device's main() polls the touch panel between ui_step() calls; the simulator (sim.c, built with
+ * UI_HOST: tests/test_u30ui2.py) includes this file, drives ui_step() on a virtual clock and feeds gesture() itself. */
+static long ui_last_draw;
+static unsigned ui_seen, ui_seen_log;
+static int ui_on = 1, ui_last_min = -1, ui_redraw = 1;
+
+static void ui_init(void)
 {
-	struct pollfd pfd;
-	long now, last_draw = 0;
-	unsigned seen = 0, seen_log = 0;
-	int on = 1, last_min = -1, redraw = 1;
 	FILE *tz = fopen("/etc/TZ", "r");
 
 	if (tz) {
@@ -976,11 +978,149 @@ int main(void)
 		fclose(tz);
 	}
 	tzset();
+#ifndef UI_HOST
 	signal(SIGUSR1, on_usr1);
 	signal(SIGUSR2, on_usr2);
+#endif
 	conf_load();
 	lang_load();
 	gfx_init();
+}
+
+/* one pass at NOW: the screen's state, the timeouts, the data snapshot, a redraw when something changed. Returns how
+ * long the caller may wait for input (ms). */
+static int ui_step(long now)
+{
+	int timeout = 1000, t;
+	time_t wall = time(NULL);
+	struct tm tm;
+
+	if (display_is_on() != ui_on) {
+		ui_on = !ui_on;
+		data_screen_on = ui_on;
+		if (ui_on) {
+			apply_brightness();
+			last_touch = now;
+			ui_redraw = 1;
+			data_poke();
+		} else {
+			go_home();
+			if (lock_mode_hold)
+				locked = 1;
+		}
+	}
+	if (ui_on && timeout_s && now - last_touch > timeout_s * 1000L && !input_is_down()) {
+		display_backlight(0);
+		ui_on = 0;
+		data_screen_on = 0;
+		go_home();
+		if (lock_mode_hold)
+			locked = 1;
+	}
+	if (ui_on && lock_mode_hold && !locked && now - last_touch > RELOCK_MS) {
+		locked = 1;
+		go_home();
+		ui_redraw = 1;
+	}
+	data_want_fast = ui_on && (page == P_HOME || page == P_TRAFFIC);
+
+	if (ui_on) {
+		pthread_mutex_lock(&data_lock);
+		if (D.serial != ui_seen || (page == P_LOG && D.logserial != ui_seen_log)) {
+			S = D;
+			ui_seen = D.serial;
+			ui_seen_log = D.logserial;
+			ui_redraw = 1;
+		}
+		pthread_mutex_unlock(&data_lock);
+		localtime_r(&wall, &tm);
+		if (tm.tm_min != ui_last_min) {
+			ui_last_min = tm.tm_min;
+			ui_redraw = 1;
+		}
+		if (settle_t0 || hold_row >= 0 || now < hint_until + 50 || dragging)
+			ui_redraw = 1;
+		if (hold_row >= 0 && now - hold_t0 >= HOLD_MS) {
+			action_run(hold_row);
+			hold_row = -1;
+		}
+		if (ui_redraw && now - ui_last_draw >= 16) {
+			draw(now);
+			display_present();
+			ui_last_draw = now;
+			ui_redraw = 0;
+		}
+		if (settle_t0 || hold_row >= 0 || dragging)
+			timeout = 16;
+		else if (now < hint_until)
+			timeout = 100;
+		t = input_ms_to_long();
+		if (t >= 0 && t < timeout)
+			timeout = t;
+	} else {
+		timeout = 500;
+	}
+	return timeout;
+}
+
+/* the command language of /tmp/u30ui.cmd (read at SIGUSR2; the buttons service and the tests) and of the simulator's
+ * "cmd": "tap X Y", "long X Y", "swipe left|right|up|down", "lang en|tr|zh", "screen on", "power" (the power key held:
+ * the screen on and the Power page, through the lock). 1 when understood. */
+static int ui_command(const char *line)
+{
+	struct gesture tg = {0};
+	char w[16];
+	int cx, cy;
+	long now = now_ms();
+
+	if (sscanf(line, "tap %d %d", &cx, &cy) == 2) {
+		tg.type = G_DOWN; tg.x = cx; tg.y = cy;
+		gesture(&tg, now);
+		tg.type = G_TAP;
+		gesture(&tg, now);
+	} else if (sscanf(line, "long %d %d", &cx, &cy) == 2) {
+		tg.type = G_DOWN; tg.x = cx; tg.y = cy;
+		gesture(&tg, now);
+		tg.type = G_LONG;
+		gesture(&tg, now);
+		tg.type = G_UP;
+		gesture(&tg, now);
+	} else if (sscanf(line, "swipe %15s", w) == 1) {
+		tg.x = tg.y = 120;
+		tg.type = G_DOWN;
+		gesture(&tg, now);
+		tg.dx = !strcmp(w, "left") ? -60 : !strcmp(w, "right") ? 60 : 0;
+		tg.dy = !strcmp(w, "up") ? -60 : !strcmp(w, "down") ? 60 : 0;
+		tg.type = !strcmp(w, "left") ? G_SWIPE_LEFT : !strcmp(w, "right") ? G_SWIPE_RIGHT :
+			  !strcmp(w, "up") ? G_SWIPE_UP : G_SWIPE_DOWN;
+		if (tg.dx) {
+			struct gesture mv = tg;
+
+			mv.type = G_MOVE;
+			gesture(&mv, now);
+		}
+		gesture(&tg, now);
+		if (tg.dx && settle_t0) {
+			settle_t0 = 0;
+			page = settle_to;
+		}
+	} else if (sscanf(line, "lang %15s", w) == 1) {
+		lang = !strcmp(w, "tr") ? L_TR : !strcmp(w, "zh") ? L_ZH : L_EN;
+	} else if (!strncmp(line, "screen on", 9)) {
+		display_backlight(1);
+	} else {
+		return 0;
+	}
+	ui_redraw = 1;
+	return 1;
+}
+
+#ifndef UI_HOST
+int main(void)
+{
+	struct pollfd pfd;
+
+	ui_init();
 	if (display_init()) {
 		fprintf(stderr, "u30ui2: no display\n");
 		return 1;
@@ -994,127 +1134,18 @@ int main(void)
 
 	for (;;) {
 		struct gesture g;
-		int timeout = 1000, t;
-		time_t wall = time(NULL);
-		struct tm tm;
+		int timeout = ui_step(now_ms());
 
-		now = now_ms();
-		if (display_is_on() != on) {
-			on = !on;
-			data_screen_on = on;
-			if (on) {
-				apply_brightness();
-				last_touch = now;
-				redraw = 1;
-				data_poke();
-			} else {
-				go_home();
-				if (lock_mode_hold)
-					locked = 1;
-			}
-		}
-		if (on && timeout_s && now - last_touch > timeout_s * 1000L && !input_is_down()) {
-			display_backlight(0);
-			on = 0;
-			data_screen_on = 0;
-			go_home();
-			if (lock_mode_hold)
-				locked = 1;
-		}
-		if (on && lock_mode_hold && !locked && now - last_touch > RELOCK_MS) {
-			locked = 1;
-			go_home();
-			redraw = 1;
-		}
-		data_want_fast = on && (page == P_HOME || page == P_TRAFFIC);
-
-		if (on) {
-			pthread_mutex_lock(&data_lock);
-			if (D.serial != seen || (page == P_LOG && D.logserial != seen_log)) {
-				S = D;
-				seen = D.serial;
-				seen_log = D.logserial;
-				redraw = 1;
-			}
-			pthread_mutex_unlock(&data_lock);
-			localtime_r(&wall, &tm);
-			if (tm.tm_min != last_min) {
-				last_min = tm.tm_min;
-				redraw = 1;
-			}
-			if (settle_t0 || hold_row >= 0 || now < hint_until + 50 || dragging)
-				redraw = 1;
-			if (hold_row >= 0 && now - hold_t0 >= HOLD_MS) {
-				action_run(hold_row);
-				hold_row = -1;
-			}
-			if (redraw && now - last_draw >= 16) {
-				draw(now);
-				display_present();
-				last_draw = now;
-				redraw = 0;
-			}
-			if (settle_t0 || hold_row >= 0 || dragging)
-				timeout = 16;
-			else if (now < hint_until)
-				timeout = 100;
-			t = input_ms_to_long();
-			if (t >= 0 && t < timeout)
-				timeout = t;
-		} else {
-			timeout = 500;
-		}
-
-		/* test gestures: "tap X Y", "long X Y", "swipe left|right|up|down", "screen on", "lang en|tr|zh" */
 		if (want_cmd) {
 			FILE *cf = fopen("/tmp/u30ui.cmd", "r");
-			char line[64], w[16];
-			int cx, cy;
+			char line[64];
 
 			want_cmd = 0;
-			while (cf && fgets(line, sizeof(line), cf)) {
-				struct gesture tg = {0};
-
-				if (sscanf(line, "tap %d %d", &cx, &cy) == 2) {
-					tg.type = G_DOWN; tg.x = cx; tg.y = cy;
-					gesture(&tg, now_ms());
-					tg.type = G_TAP;
-					gesture(&tg, now_ms());
-				} else if (sscanf(line, "long %d %d", &cx, &cy) == 2) {
-					tg.type = G_DOWN; tg.x = cx; tg.y = cy;
-					gesture(&tg, now_ms());
-					tg.type = G_LONG;
-					gesture(&tg, now_ms());
-					tg.type = G_UP;
-					gesture(&tg, now_ms());
-				} else if (sscanf(line, "swipe %15s", w) == 1) {
-					tg.x = tg.y = 120;
-					tg.type = G_DOWN;
-					gesture(&tg, now_ms());
-					tg.dx = !strcmp(w, "left") ? -60 : !strcmp(w, "right") ? 60 : 0;
-					tg.dy = !strcmp(w, "up") ? -60 : !strcmp(w, "down") ? 60 : 0;
-					tg.type = !strcmp(w, "left") ? G_SWIPE_LEFT : !strcmp(w, "right") ? G_SWIPE_RIGHT :
-						  !strcmp(w, "up") ? G_SWIPE_UP : G_SWIPE_DOWN;
-					if (tg.dx) {
-						struct gesture mv = tg;
-
-						mv.type = G_MOVE;
-						gesture(&mv, now_ms());
-					}
-					gesture(&tg, now_ms());
-					if (tg.dx && settle_t0) {
-						settle_t0 = 0;
-						page = settle_to;
-					}
-				} else if (sscanf(line, "lang %15s", w) == 1) {
-					lang = !strcmp(w, "tr") ? L_TR : !strcmp(w, "zh") ? L_ZH : L_EN;
-				} else if (!strncmp(line, "screen on", 9)) {
-					display_backlight(1);
-				}
-			}
+			while (cf && fgets(line, sizeof(line), cf))
+				ui_command(line);
 			if (cf)
 				fclose(cf);
-			redraw = 1;
+			ui_redraw = 1;
 		}
 		if (want_shot) {
 			want_shot = 0;
@@ -1126,18 +1157,19 @@ int main(void)
 		}
 		if (pfd.fd >= 0 && poll(&pfd, 1, timeout) > 0) {
 			while (input_read(&g)) {
-				if (on) {
+				if (ui_on) {
 					gesture(&g, now_ms());
-					redraw = 1;
+					ui_redraw = 1;
 				}
 			}
 		} else if (pfd.fd < 0) {
 			usleep(timeout * 1000);
 		}
-		if (on && input_poll_long(&g)) {
+		if (ui_on && input_poll_long(&g)) {
 			gesture(&g, now_ms());
-			redraw = 1;
+			ui_redraw = 1;
 		}
 	}
 	return 0;
 }
+#endif
