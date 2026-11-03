@@ -20,7 +20,8 @@ the below on the root filesystem (from Android: `customize.sh ROOT /vendor_dlkm/
 | mu5358-thermal | S99 | mu300's thermal-guard, reading only the zones that are sensors (frame-thmzone reads 86 C on a cool board) |
 | mu5358-user-packages | S99 | mu300's: the user's own package list |
 | network | S20 | wan = mu300cell over sipa_eth0 (APN `internet`) |
-| mu5358-buttons | S95 | power: short = screen on/off, held 3 s = power off; Wi-Fi key held 3 s = hotspot off/on |
+| mu5358-buttons | S95 | power: short = screen on/off; held 1.5 s = the dashboard's Power page (its hold ring confirms restart / power off), held 3 s = power off when the dashboard is not the screen (classic UI, console, or no u30ui2 process); Wi-Fi key held = hotspot off/on (the NFC tag re-synced) |
+| mu5358-nfc | S95 | NFC tap-to-connect: `mu5358-nfc-sync` writes the hotspot's Wi-Fi credential into the NFC tag at boot, after a LuCI apply (reload trigger), the AP's ifup/ifdown (hotplug), every `wifi reload` and the switches (`/etc/mu5358/nfc off`; the screen's Wi-Fi page, the panel's Device card) |
 | mu5358-cell | S99 | mu300's `mobile-data watch` (redial after two failed checks) |
 | (panel) | - | mu300's LuCI panel as `luci-app-mu5358` (ubus `mu5358dash`), the Aurora theme, ttyd: `http://192.168.58.1/cgi-bin/luci/admin/home`, root's password |
 | mu5358-usb | S99 | re-enumerates the USB gadget (5 s off) while no host has it: not configured, no carrier, or our TX still while the host's packets come in |
@@ -86,7 +87,7 @@ self-contained); `rollback-boot` puts the previous images back if wanted.
 | eMMC, USB (NCM/ECM/RNDIS + ACM, a flash drive on demand, adb with keys) | yes (the flash drive and adb: 2026-11-01, `openwrt/usb`; the drive any size, formatted from the computer if wished; see the USB findings below) |
 | Modem, mobile data | yes: Turk Telekom LTE; 14-19 Mbit/s at this place, Android 11-12 on the same spot |
 | Wi-Fi | AIC8800D80X2: hotspot 5 GHz channel 36, HE80 (Wi-Fi 6), WPA2; the board's MAC and calibration |
-| Screen | u30ui2: status bar + home (live graph), network, Wi-Fi, clients, traffic, SMS, battery, system, settings, power, log in three languages; 6 MB RAM, 0.5 % CPU screen on, 0.1 % off (u30ui, the papatya, kept as the classic interface) (no fbcon in GKI: DRM dumb buffers, PAGE_FLIP; the panel is mounted upside down and turns the picture itself, MADCTL through `tools/spispeed/panelcmd`: turned by the CPU it tore) |
+| Screen | u30ui2: status bar + home (live graph), network, Wi-Fi (with the NFC switch), clients, traffic, SMS, battery, system, settings, power, log in three languages; wakes on the charger's uevent (a plug or unplug: `usb` and the TCPM source supply announce it on this kernel, `ac` never did; battery's events are ignored, nothing polls); the power key held opens the Power page through the lock; the first frame is in the buffer before the mode-set (no black frame at the start); a host simulator and a seeded fuzz under ASan drive the real `ui.c` in the tests (`tools/u30ui2/sim.c`, `tests/test_u30ui2.py`); 6 MB RAM, 0.5 % CPU screen on, 0.1 % off (u30ui, the papatya, kept as the classic interface) (no fbcon in GKI: DRM dumb buffers, PAGE_FLIP; the panel is mounted upside down and turns the picture itself, MADCTL through `tools/spispeed/panelcmd`: turned by the CPU it tore) |
 | GPU | Mali-G57 (arch 9.0.9, DDK r49p1), OpenGL ES 3.2 / EGL 1.5 / Vulkan through Android's libGLES_mali.so in the chroot, on demand (`gpu/README.md`); no OpenCL in Android 15's driver. 60 s stress: 950 MHz, ~100 frames/s of a heavy shader, 40 °C, idle back at 384 MHz and powered off |
 | Buttons | power, Wi-Fi key (volume keys are in the DT, not used) |
 | Battery, charger | vendor charger-manager; `mu5358-charge` sets the input limit from the source (2026-11-01: 1.5 A from the Mac mini's Type-C port, 1.25-1.37 A into the battery, 55 → 83 % in one hour at 32-33 °C, the vendor driver never rewrote it; before: 500 mA, 450 mA into the battery); at 100 % the battery idles (-5 mA) and the system runs on USB |
@@ -106,9 +107,14 @@ self-contained); `rollback-boot` puts the previous images back if wanted.
 - The vendor musb keeps reporting `configured` after the host is gone: mu5358-usb looks at the NCM carrier too.
 - **The role switch takes no userspace writes:** `/sys/class/usb_role/64a00000.usb-role-switch` has no `role`
   attribute (the vendor driver registers it without `allow_userspace_control`), so host mode cannot be asked of it.
-  `mu5358-usb host` asks the Type-C port controller instead (`/sys/class/typec/port0/data_role`, a USB-PD data role
-  swap, which needs a partner that speaks PD) and undoes itself after 60 s unless `/run/mu5358/usb-host-keep` exists.
-  Untested until the OTG bench test (an adapter and a USB stick in place of the Mac's cable, the board on its hotspot).
+  **The port's policy can (2026-11-03, from kanoqwq/u30pro-bringup):** `/sys/class/typec/port0/port_type` takes
+  `dual` (the default: the attachment decides), `source` (host, VBUS from the boost regulator) and `sink` (device);
+  TCPM detaches and re-evaluates. `mu5358-usb auto|host|device` writes it (`host` undoes itself after 60 s unless
+  `/run/mu5358/usb-host-keep` exists; the panel's "USB role" card does the same), the data-role swap stays the
+  fallback on a kernel without a writable `port_type`. `status` also reports `musb_hostenable` (`enabled` here,
+  report-only). Bench with the Mac's cable, three guarded trials: `auto` and `device` kept the link; `host` dropped
+  it for 5 s and the port re-attached as a peripheral (the computer is the source), the undo put `dual` back at 60 s.
+  The OTG test (an adapter and a USB stick in place of the cable, the board on its hotspot) is still the maintainer's.
 - **The USB composite is composed from the state files by `boot/init`** before switch_root (`/etc/mu5358/usb-net`,
   `/etc/mu5358/usb-storage`): a mode never costs a rebind at boot. The flash drive and adb rebind the gadget once when
   they are toggled while plugged in (the computer sees a replug); `mu5358-usb boot` never rebinds.
@@ -183,11 +189,35 @@ self-contained); `rollback-boot` puts the previous images back if wanted.
   watchdog is off (`Reg05=0x87`), so a value stays until rewritten. The slave is never touched.
 - Boot-time WARNINGs that are harmless: device_links (ums9632_clk), sipa_eth0 "Incorrect netdev->dev_addr".
 
+## NFC tap-to-connect (2026-11-03)
+
+The U30 Pro's NFC tag is a Fudan FM11NT08x on `/dev/i2c-4` at 0x57 (device tree node `ntag_fm11_gpio`; the stock
+`tmsnfc` module only holds its reset and interrupt lines, nothing is bound to the address, `i2c-dev` and
+`i2ctransfer` are in the image). It is an NFC Forum Type 2 tag: capability container `e1 10 6d 00` (872 bytes of
+NDEF data, read/write), SAK `00` on the bench unit (a phone reads it as a Type 2 tag; the factory value 0x20 would
+make phones talk Type 4 and see nothing, the tool rewrites it). The stock firmware kept a Wi-Fi Simple
+Configuration credential there; `mu5358-nfc` (tools/nfc, from kanoqwq/u30pro-bringup's u30pro-nfc, origin
+33333s/U30pro-openwrt, MIT) writes the current hotspot the same way: an NDEF record of type
+`application/vnd.wfa.wsc` with the SSID, the authentication (open or WPA2-Personal: `psk2*` and `sae-mixed*`; a pure
+SAE, OWE, WPA1 or enterprise hotspot leaves the tag empty, phones take only those two from a tag) and the key. Pages
+of 4 bytes, only the ones that differ, the NDEF length page emptied first and committed last (a power cut never
+leaves half a credential), the whole message read back. The key reaches the tool on stdin only; `show` prints the
+SSID's length (`show -v` the SSID), never the key.
+
+`mu5358-nfc-sync` (openwrt/nfc) is the one writer, serialised by `flock`: `sync` (boot, the LuCI apply through the
+reload trigger, the AP's ifup/ifdown, every `wifi reload` in `buttons` and the screens), `on|off|toggle`
+(`/etc/mu5358/nfc`, carried across updates), `state`, `supported`. The result word is in `/run/mu5358/nfc-result`
+(`open wpa2 disabled hotspot_off unsupported no_tag error`), read by the screen's Wi-Fi row and the panel's card
+(rpcd `mu5358nfc`). Tests: the tool against a file-backed i2c device under ASan (an independent WSC encoder as the
+oracle, an interrupted write, a read-only tag, the SAK), the script under busybox with `uci` and the tool stubbed.
+The phone tap itself is the maintainer's check.
+
 ## Where the logs are
 
 - The persistent log: sectors 122152960.. of mmcblk0 (1 MiB; boot/init's kernel log in the first half, mu5358-log's
   snapshots in the second). From Android: `dd if=/dev/block/mmcblk0 bs=512 skip=122152960 count=2048`.
 - LK's log: the uboot_log partition (boot cause: `BootCause is ...`).
+- `logread -e mu5358-nfc`: the tag's failures (never the SSID or the key); `logread -e mu5358-usb`: the host mode's undo.
 - The tree chosen at boot: `stage=tree-mounted tree=system tries=N`, `stage=tree-fallback ...`, `stage=tree-flat` in the
   persistent log's stages (W2).
 - A boot that never reaches userspace: sysdumpdb (LK minidump), `tools/sysdumpdb-extract.py`.

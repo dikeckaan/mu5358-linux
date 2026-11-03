@@ -164,5 +164,7 @@ mu300 translates four things, none machine-driven at build time:
 | `fw4-old-kernel-flowtable.patch`, `19-mu300-fw4` (`§38c`), procd-ujail removal | `OW/etc/hotplug.d/iface/19-mu300-fw4` | 5.4 only; self-limited, harmless. |
 | `early-recorder` into `boot_b` at 48 MiB | `BIN/early-recorder` | Would write inside AVB-signed boot_b every boot; the persistent-log sectors replace it. |
 
+**From kanoqwq/u30pro-bringup (2026-11-03, the safe package of `docs/superpowers/specs/2026-11-03-kano-safe-package-design.md`):** NFC tap-to-connect (`§33g`'s U30 Air NFC is this board's FM11NT08 tag, done: tools/nfc, openwrt/nfc), USB host by `port_type` (done, OTG test open), u30ui2's host simulator + fuzz, the charger-uevent wake, the power-key menu, the first frame before the mode-set. Next packages in the agreed order: the SIM topology, the modem without the Android chroot, mainline 6.12.
+
 **Order:** C1 and A1 first (everything branches on them); B1 makes B2/B4/B8/B9/E3 cheap; D1 gates B3/B7/D4/D5;
 A10 gates B7 and `smoke.py`'s Linux side; D2 before B3 so the updater is born with a fake-eMMC test.
