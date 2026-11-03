@@ -7,6 +7,7 @@
  * Signals as u30ui: SIGUSR1 writes the frame to /tmp/u30ui.png, SIGUSR2 reads gestures from /tmp/u30ui.cmd.
  * SPDX-License-Identifier: MIT
  */
+#include <errno.h>
 #include <math.h>
 #include <poll.h>
 #include <signal.h>
@@ -15,6 +16,10 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#ifndef UI_HOST
+#include <linux/netlink.h>
+#include <sys/socket.h>
+#endif
 #include "../u30ui/gfx.h"
 #include "../u30ui/icons.h"
 #include "../u30ui/display.h"
@@ -958,11 +963,117 @@ static void gesture(struct gesture *g, long now)
 	}
 }
 
-/* --- the loop. The device's main() polls the touch panel between ui_step() calls; the simulator (sim.c, built with
- * UI_HOST: tests/test_u30ui2.py) includes this file, drives ui_step() on a virtual clock and feeds gesture() itself. */
 static long ui_last_draw;
 static unsigned ui_seen, ui_seen_log;
 static int ui_on = 1, ui_last_min = -1, ui_redraw = 1;
+
+/* --- the charger's uevent: the screen wakes when a plug or an unplug changes "online" of ac, usb or the Type-C
+ * source supply (/sys/class/power_supply; which of the three announces it on this kernel is measured on the bench:
+ * docs/GKI-SYSTEM.md). battery's events (the charger manager's log noise, several a minute) and every other
+ * supply are ignored; nothing polls. The lock stays. After kanoqwq/u30pro-bringup's u30pro-panel (MIT). */
+static const char *const power_names[] = { "ac", "usb", "sprd-tcpm-source-psy-sc27xx-pd" };
+#define NPOWER 3
+static int power_online[NPOWER] = { -1, -1, -1 };	/* -1 unknown: the first value seen is an edge */
+static int powerfd = -1;
+
+static void wake(long now)
+{
+	display_backlight(1);
+	last_touch = now;
+	ui_redraw = 1;
+}
+
+static void power_snapshot(void)
+{
+	char path[96], b[8];
+	int i;
+
+	for (i = 0; i < NPOWER; i++) {
+		FILE *f;
+
+		snprintf(path, sizeof(path), "/sys/class/power_supply/%s/online", power_names[i]);
+		f = fopen(path, "r");
+		if (!f)
+			continue;
+		if (fgets(b, sizeof(b), f))
+			power_online[i] = atoi(b);
+		fclose(f);
+	}
+}
+
+/* one uevent packet ("action@path", then KEY=VALUE strings, NUL-separated); 1 when it woke the screen */
+static int power_uevent(const char *buf, size_t n)
+{
+	const char *p = buf, *end = buf + n, *name = NULL;
+	int change = 0, psy = 0, online = -1, i;
+
+	while (p < end) {
+		size_t l = strnlen(p, end - p);
+
+		if (!strncmp(p, "ACTION=change", l) && l == 13)
+			change = 1;
+		else if (!strncmp(p, "SUBSYSTEM=power_supply", l) && l == 22)
+			psy = 1;
+		else if (!strncmp(p, "POWER_SUPPLY_NAME=", 18))
+			name = p + 18;
+		else if (!strncmp(p, "POWER_SUPPLY_ONLINE=", 20) && (p[20] == '0' || p[20] == '1'))
+			online = p[20] - '0';
+		p += l + 1;
+	}
+	if (!change || !psy || !name || online < 0)
+		return 0;
+	for (i = 0; i < NPOWER; i++)
+		if (!strcmp(name, power_names[i]))
+			break;
+	if (i == NPOWER || power_online[i] == online)
+		return 0;
+	power_online[i] = online;
+	wake(now_ms());
+	return 1;
+}
+
+#ifndef UI_HOST
+static void power_events_open(void)
+{
+	struct sockaddr_nl a = { .nl_family = AF_NETLINK, .nl_groups = 1 };
+
+	powerfd = socket(AF_NETLINK, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, NETLINK_KOBJECT_UEVENT);
+	if (powerfd < 0 || bind(powerfd, (struct sockaddr *)&a, sizeof(a)) < 0) {
+		fprintf(stderr, "u30ui2: no uevent socket (%s): the charger will not wake the screen\n", strerror(errno));
+		if (powerfd >= 0)
+			close(powerfd);
+		powerfd = -1;
+		return;
+	}
+	power_snapshot();	/* after the bind: an edge cannot fall between the read and the subscription */
+}
+
+static void power_events_read(void)
+{
+	int i;
+
+	for (i = 0; i < 64; i++) {	/* a bounded drain: a burst of other events cannot starve the touch panel */
+		char b[4096];
+		struct sockaddr_nl from;
+		socklen_t fl = sizeof(from);
+		ssize_t n = recvfrom(powerfd, b, sizeof(b), MSG_DONTWAIT, (struct sockaddr *)&from, &fl);
+
+		if (n < 0) {
+			if (errno == EINTR)
+				continue;
+			if (errno == ENOBUFS)
+				power_snapshot();	/* events were lost: one re-read, no timer */
+			return;
+		}
+		if (fl == sizeof(from) && from.nl_family == AF_NETLINK && from.nl_pid == 0)	/* the kernel's, not a daemon's */
+			power_uevent(b, (size_t)n);
+	}
+}
+#endif
+
+/* --- the loop. The device's main() polls the touch panel and the uevent socket between ui_step() calls; the
+ * simulator (sim.c, built with UI_HOST: tests/test_u30ui2.py) includes this file, drives ui_step() on a virtual clock
+ * and feeds gesture() and power_uevent() itself. */
 
 static void ui_init(void)
 {
@@ -1118,15 +1229,18 @@ static int ui_command(const char *line)
 #ifndef UI_HOST
 int main(void)
 {
-	struct pollfd pfd;
+	struct pollfd pfd[2];
 
 	ui_init();
 	if (display_init()) {
 		fprintf(stderr, "u30ui2: no display\n");
 		return 1;
 	}
-	pfd.fd = input_open();
-	pfd.events = POLLIN;
+	pfd[0].fd = input_open();
+	pfd[0].events = POLLIN;
+	power_events_open();
+	pfd[1].fd = powerfd;
+	pfd[1].events = POLLIN;
 	data_start();
 	display_backlight(1);
 	apply_brightness();
@@ -1155,14 +1269,17 @@ int main(void)
 			draw(now_ms());
 			png_write("/tmp/u30ui.png");
 		}
-		if (pfd.fd >= 0 && poll(&pfd, 1, timeout) > 0) {
-			while (input_read(&g)) {
-				if (ui_on) {
-					gesture(&g, now_ms());
-					ui_redraw = 1;
+		if ((pfd[0].fd >= 0 || pfd[1].fd >= 0) && poll(pfd, 2, timeout) > 0) {
+			if (pfd[0].fd >= 0 && pfd[0].revents)
+				while (input_read(&g)) {
+					if (ui_on) {
+						gesture(&g, now_ms());
+						ui_redraw = 1;
+					}
 				}
-			}
-		} else if (pfd.fd < 0) {
+			if (pfd[1].fd >= 0 && (pfd[1].revents & (POLLIN | POLLERR)))
+				power_events_read();
+		} else if (pfd[0].fd < 0 && pfd[1].fd < 0) {
 			usleep(timeout * 1000);
 		}
 		if (ui_on && input_poll_long(&g)) {

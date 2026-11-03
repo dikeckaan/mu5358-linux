@@ -121,6 +121,80 @@ class Sim(unittest.TestCase):
     def test_unknown_command_fails(self):
         self.run_sim('page home\nbogus 1 2\n', want_rc=2)
 
+    # --- event wake: the charger's uevent turns the screen on; nothing else does, nothing polls
+    def test_uevent_ac_wakes(self):
+        out = self.run_sim('screen off\nwait 100\nstate\nuevent ac 1\nwait 100\nstate\n')
+        s = self.states(out)
+        self.assertEqual((s[0]['screen'], s[0]['locked']), ('off', '1'))
+        self.assertEqual((s[1]['screen'], s[1]['locked']), ('on', '1'), 'the screen wakes, the lock stays')
+
+    def test_uevent_same_value_no_wake(self):
+        out = self.run_sim('uevent ac 1\nscreen off\nwait 100\nuevent ac 1\nwait 100\nstate\nuevent ac 0\nwait 100\nstate\n')
+        s = self.states(out)
+        self.assertEqual(s[0]['screen'], 'off', 'the same online value again is not an edge')
+        self.assertEqual(s[1]['screen'], 'on', 'the unplug is')
+
+    def test_battery_flood_ignored(self):
+        out = self.run_sim('screen off\nwait 100\n' + 'uevent battery 1\nuevent battery 0\n' * 500 + 'wait 100\nstate\n')
+        self.assertEqual(self.states(out)[0]['screen'], 'off')
+
+    def test_flood_keeps_input(self):
+        out = self.run_sim('set lock off\npage settings\n' + 'uevent battery 1\nuevent battery 0\n' * 500 + 'tap 120 72\nstate\n')
+        self.assertEqual(self.states(out)[0]['lang'], 'tr')
+
+
+class Fuzz(Sim):
+    """4000 random events against the ASan/UBSan build: no crash, no sanitizer report, an empty stderr."""
+
+    @classmethod
+    def setUpClass(cls):
+        why = docker_image_ready(IMAGE)
+        if why:
+            raise unittest.SkipTest(why)
+        cls.build = Path(tempfile.mkdtemp(prefix='mu5358-u30ui2-asan-'))
+        r = subprocess.run([DOCKER, 'run', '--rm', '-v', f'{TOP}/tools:/t:ro', '-v', f'{cls.build}:/b', IMAGE, 'bash',
+                            '/t/u30ui2/build.sh', 'sim', '/b/sim', 'asan'], capture_output=True, text=True, timeout=900)
+        if r.returncode != 0:
+            shutil.rmtree(cls.build, ignore_errors=True)
+            raise AssertionError('the ASan simulator does not build: ' + (r.stdout + r.stderr)[-3000:])
+
+    @staticmethod
+    def script(seed, n=4000):
+        import random
+        r = random.Random(seed)
+        out = ['set lock off']
+        for i in range(n):
+            k = r.random()
+            x, y = r.randint(0, 239), r.randint(0, 239)
+            if k < .30: out.append('tap %d %d' % (x, y))
+            elif k < .50: out.append('swipe %d %d %d %d %d' % (x, y, r.randint(0, 239), r.randint(0, 239), r.choice([80, 160, 400])))
+            elif k < .58: out.append('hold %d %d %d' % (x, y, r.choice([300, 900, 1500, 2500])))
+            elif k < .64: out.append('key 116 %s' % r.choice(['short', 'long']))
+            elif k < .72: out.append('wait %d' % r.choice([50, 500, 5000, 70000, 200000]))
+            elif k < .78: out.append('page %s' % r.choice(PAGES))
+            elif k < .82: out.append('lang %s' % r.choice(LANGS))
+            elif k < .88: out.append('set %s %d' % (r.choice(['nfc', 'usb_storage', 'battery', 'charging', 'wifi', 'signal', 'nsms']), r.randint(0, 100)))
+            elif k < .91: out.append('uevent %s %d' % (r.choice(['ac', 'usb', 'battery']), r.randint(0, 1)))
+            elif k < .93: out.append('screen %s' % r.choice(['on', 'off']))
+            elif k < .95: out.append('down %d %d' % (x, y))
+            elif k < .97: out.append('move %d %d' % (x, y))
+            elif k < .99: out.append('up')
+            else: out.append('shot fuzz%d' % (i % 3))
+        return '\n'.join(out) + '\nstate\n'
+
+    def test_seeded_fuzz(self):
+        seeds = [1] + ([int(os.environ['MU5358_FUZZ_SEED'])] if os.environ.get('MU5358_FUZZ_SEED') else [])
+        for seed in seeds:
+            with self.subTest(seed=seed):
+                r = subprocess.run([DOCKER, 'run', '--rm', '-i', '-e', 'ASAN_OPTIONS=detect_leaks=0', '-v', f'{self.build}:/b:ro',
+                                    '-v', f'{self.t}:/o', IMAGE, '/b/sim', '/o'], capture_output=True, text=True,
+                                   input=self.script(seed), timeout=600)
+                self.assertEqual(r.returncode, 0, r.stderr[-3000:])
+                self.assertEqual(r.stderr, '')
+                self.assertIn('STATE ', r.stdout)
+
+    # the inherited scenarios run on the ASan build too
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -178,6 +178,19 @@ static int command(char *line)
 		else if (x == 116 && !strcmp(a, "long")) ui_command("power");
 		return 1;
 	}
+	if (sscanf(line, "uevent %63s %d", a, &x) == 2) {
+		/* the kernel's packet for a power_supply change: "change@path", then KEY=VALUE strings, NUL-separated */
+		char u[256];
+		int n = 0;
+
+		n += 1 + sprintf(u + n, "change@/devices/platform/%s", a);
+		n += 1 + sprintf(u + n, "ACTION=change");
+		n += 1 + sprintf(u + n, "SUBSYSTEM=power_supply");
+		n += 1 + sprintf(u + n, "POWER_SUPPLY_NAME=%s", a);
+		n += 1 + sprintf(u + n, "POWER_SUPPLY_ONLINE=%d", x);
+		power_uevent(u, n);
+		return 1;
+	}
 	if (sscanf(line, "wait %d", &ms) == 1) { advance(ms); return 1; }
 	if (sscanf(line, "page %63s", a) == 1) {
 		int p = page_of(a);
