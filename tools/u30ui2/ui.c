@@ -748,7 +748,7 @@ static void action_run(int i)
 	case 0: data_run("sync; reboot"); break;
 	case 1: data_run("sync; poweroff"); break;
 	case 2: data_run("/etc/init.d/mu5358-modem restart"); break;
-	case 3: data_run("wifi reload"); break;
+	case 3: data_run("wifi reload; /opt/mu5358/bin/mu5358-nfc-sync sync"); break;
 	case 4: display_backlight(0); break;
 	}
 }
@@ -918,8 +918,8 @@ static void gesture(struct gesture *g, long now)
 		else if (g->y >= 156 && g->y < 180)
 			wifi_show_key = !wifi_show_key;
 		else if (g->y >= 180 && g->x < 120)
-			data_run(S.wifi_on ? "uci set wireless.ap0.disabled=1; uci commit wireless; wifi reload"
-					   : "uci set wireless.ap0.disabled=0; uci commit wireless; wifi reload");
+			data_run(S.wifi_on ? "uci set wireless.ap0.disabled=1; uci commit wireless; wifi reload; /opt/mu5358/bin/mu5358-nfc-sync sync"
+					   : "uci set wireless.ap0.disabled=0; uci commit wireless; wifi reload; /opt/mu5358/bin/mu5358-nfc-sync sync");
 		else if (g->y >= 180)
 			wifi_qr = 1;
 		break;

@@ -6,7 +6,7 @@
 #   1. the GKI kernel: android15-6.6 at the device's own commit (ACK_COMMIT), shallow, into work/kernel/common;
 #      kernel/build.sh in kernel/Dockerfile's image; the result must be the kernel the vendor modules load into
 #      (kernel.release, and every exported symbol's CRC as kernel/Module.symvers records them)
-#   2. the tools: u30ui, u30ui2, screencon (mainline/Dockerfile's image), panelcmd.ko against that kernel,
+#   2. the tools: u30ui, u30ui2, screencon, mu5358-nfc (mainline/Dockerfile's image), panelcmd.ko against that kernel,
 #      e2fsck (tools/e2fsck/build.sh), the ramdisk's busybox (Ubuntu 24.04's busybox-static, as mu300-linux's
 #      releases carry it), gltest (gpu/prebuilt: it links against the device's own Mali library)
 #   3. the base: mu300-linux's openwrt-luci rootfs, by the digest tools/make-release.sh pins
@@ -90,6 +90,7 @@ step "the tools"
 docker run --rm -v "$PWD/tools/u30ui":/w mu5358-mainline-build bash /w/build.sh
 docker run --rm -v "$PWD/tools":/t mu5358-mainline-build bash /t/u30ui2/build.sh
 docker run --rm -v "$PWD/tools":/t mu5358-mainline-build bash /t/charge/build.sh
+sh tools/nfc/build.sh
 docker run --rm -e FONT=/src/common/lib/fonts/font_6x10.c -v "$W/kernel":/src -v "$PWD/tools/screencon":/w mu5358-mainline-build bash /w/build.sh
 docker run --rm -v "$W/kernel":/src -v "$PWD/tools/spispeed":/m mu5358-kbuild bash /m/build.sh
 VERMAGIC=$(docker run --rm -v "$PWD/tools/spispeed":/m mu5358-kbuild modinfo -F vermagic /m/panelcmd.ko)

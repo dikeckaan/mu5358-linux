@@ -351,6 +351,20 @@ EOF
 chmod 755 "$R/etc/init.d/mu5358-usb"
 ln -sf ../init.d/mu5358-usb "$R/etc/rc.d/S99mu5358-usb"
 
+# NFC tap-to-connect (openwrt/nfc, tools/nfc; docs/superpowers/specs/2026-11-03-kano-safe-package-design.md): the
+# device's NFC tag (FM11NT08x on i2c-4, 0x57) carries the hotspot's Wi-Fi credential, a phone that touches the device
+# joins. mu5358-nfc writes the tag, mu5358-nfc-sync keeps it equal to wireless.ap0 (boot, LuCI apply, the AP's
+# interface up/down, every "wifi reload", the switches); /etc/mu5358/nfc "off" turns it off (carried, CARRY).
+N=$(cd "$(dirname "$0")" && pwd)/nfc
+M6=$(cd "$(dirname "$0")/.." && pwd)/tools/nfc
+[ -f "$M6/mu5358-nfc" ] || { echo "no tools/nfc/mu5358-nfc (sh tools/nfc/build.sh)" >&2; exit 1; }
+cp "$M6/mu5358-nfc" "$R/opt/mu5358/bin/mu5358-nfc" && chmod 755 "$R/opt/mu5358/bin/mu5358-nfc"
+cp "$N/mu5358-nfc-sync" "$R/opt/mu5358/bin/mu5358-nfc-sync" && chmod 755 "$R/opt/mu5358/bin/mu5358-nfc-sync"
+cp "$N/mu5358-nfc.init" "$R/etc/init.d/mu5358-nfc" && chmod 755 "$R/etc/init.d/mu5358-nfc"
+ln -sf ../init.d/mu5358-nfc "$R/etc/rc.d/S95mu5358-nfc"
+mkdir -p "$R/etc/hotplug.d/iface"
+cp "$N/95-mu5358-nfc.hotplug" "$R/etc/hotplug.d/iface/95-mu5358-nfc" && chmod 755 "$R/etc/hotplug.d/iface/95-mu5358-nfc"
+
 # The buttons (2026-10-30), from mu300's mu5358-keys (presses as text lines): the board has no LEDs (a screen, later),
 # so mu300-buttons' LED logic does not fit. gpio-keys: power 116, volume 114/115, "Wifi Switch Key" 102.
 cat > "$R/opt/mu5358/bin/buttons" <<'EOF'
@@ -383,7 +397,7 @@ trap 'stop_children; exit 143' TERM INT HUP
 			uci set wireless.ap0.disabled=1; logger -t mu5358-buttons "Wi-Fi key held: hotspot off"
 		fi
 		uci commit wireless
-		wifi reload ;;
+		wifi reload; /opt/mu5358/bin/mu5358-nfc-sync sync ;;
 	"116 short")
 		# bl_power 4 is off (the driver ignores the level then), 0 on
 		b=/sys/class/backlight/sprd_backlight

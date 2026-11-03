@@ -552,8 +552,38 @@ class Usb(unittest.TestCase):
         carry = INSTALLER.read_text(encoding='utf-8')
         carry = carry[carry.index('CARRY="'):]
         carry = carry[:carry.index('"', 7)]
-        for s_ in ('etc/mu5358/usb-storage', 'etc/mu5358/adb_auth', 'etc/mu5358/adb_keys', 'etc/mu5358/adb', 'etc/mu5358/usb-net'):
+        for s_ in ('etc/mu5358/usb-storage', 'etc/mu5358/adb_auth', 'etc/mu5358/adb_keys', 'etc/mu5358/adb', 'etc/mu5358/usb-net',
+                   'etc/mu5358/nfc'):
             self.assertIn(s_, carry.split())
+
+
+class Nfc(unittest.TestCase):
+    """NFC tap-to-connect (openwrt/nfc, tools/nfc; docs/superpowers/specs/2026-11-03-kano-safe-package-design.md): the
+    pieces in the image, the tool in the release, the tag re-synced after every wifi reload."""
+    CUSTOMIZE = (TOP / 'openwrt/customize.sh').read_text(encoding='utf-8')
+
+    def test_shipped(self):
+        c = self.CUSTOMIZE
+        self.assertIn('cp "$N/mu5358-nfc-sync" "$R/opt/mu5358/bin/mu5358-nfc-sync"', c)
+        self.assertIn('cp "$N/mu5358-nfc.init" "$R/etc/init.d/mu5358-nfc"', c)
+        self.assertIn('ln -sf ../init.d/mu5358-nfc "$R/etc/rc.d/S95mu5358-nfc"', c)
+        self.assertIn('cp "$N/95-mu5358-nfc.hotplug" "$R/etc/hotplug.d/iface/95-mu5358-nfc"', c)
+        self.assertRegex(c, r'cp "\$M6/mu5358-nfc" "\$R/opt/mu5358/bin/mu5358-nfc"')
+        self.assertIn('no tools/nfc/mu5358-nfc', c, 'a missing binary stops the build loudly')
+
+    def test_every_wifi_reload_syncs(self):
+        """Every writer that reloads the hotspot without reload_config (the reload trigger) re-syncs the tag itself."""
+        for rel in ('openwrt/customize.sh', 'tools/u30ui2/ui.c', 'tools/u30ui/ui.c'):
+            text = (TOP / rel).read_text(encoding='utf-8')
+            lines = text.splitlines()
+            hits = [i for i, l in enumerate(lines) if 'wifi reload' in l and not l.lstrip().startswith(('#', '*', '//'))]
+            self.assertTrue(hits, rel)
+            for i in hits:
+                self.assertIn('mu5358-nfc-sync sync', lines[i] + lines[i + 1], f'{rel}:{i + 1}: a wifi reload without the NFC sync')
+
+    def test_release_lists_tool(self):
+        self.assertIn('tools/nfc/mu5358-nfc', (TOP / 'tools/make-release.sh').read_text(encoding='utf-8'))
+        self.assertIn('tools/nfc/build.sh', (TOP / 'tools/ci-release.sh').read_text(encoding='utf-8'))
 
 
 class ScreenRadioLabel(unittest.TestCase):
