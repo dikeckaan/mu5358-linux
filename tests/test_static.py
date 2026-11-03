@@ -668,6 +668,95 @@ class Nfc(unittest.TestCase):
         self.assertEqual(missing, [], 'run tools/u30ui2/mkfont.sh: ' + ' '.join('U+%04X' % c for c in missing))
 
 
+class Buttons(unittest.TestCase):
+    """The buttons service (the heredoc in openwrt/customize.sh) under busybox with mu5358-keys, pidof, kill, poweroff
+    and logger stubbed: the power key held opens the dashboard's Power page (1.5 s) or, without the dashboard, powers
+    off (3 s); a short press toggles the backlight."""
+
+    @classmethod
+    def setUpClass(cls):
+        from helpers import docker_busybox
+        why = docker_busybox()
+        if why:
+            raise unittest.SkipTest(why)
+        c = CUSTOMIZE.read_text(encoding='utf-8')
+        start = c.index('cat > "$R/opt/mu5358/bin/buttons" <<\'EOF\'\n') + len('cat > "$R/opt/mu5358/bin/buttons" <<\'EOF\'\n')
+        cls.script = c[start:c.index('\nEOF\n', start) + 1]
+
+    def setUp(self):
+        import tempfile
+        self.t = Path(tempfile.mkdtemp(prefix='mu5358-buttons-', dir=TOP / 'work'))
+        self.addCleanup(shutil.rmtree, self.t, ignore_errors=True)
+        (self.t / 'buttons').write_text(self.script)
+
+    def run_buttons(self, keys, ui=None, dashboard=True, pid=''):
+        from helpers import BUSYBOX_IMAGE, DOCKER
+        stubs = r"""
+mkdir -p /opt/mu5358/bin /etc/mu5358 /t/bl /t/stub
+: > /t/poweroff.log; : > /t/logger.log; : > /t/nfc.log; : > /t/usr2; rm -f /tmp/u30ui.cmd
+export PATH=/t/stub:$PATH   # the stubs shadow busybox's applets (never written through their links)
+printf '%s\n' '#!/bin/sh' 'echo "$*" > /t/keys.args' 'cat /t/keys.in' > /opt/mu5358/bin/mu5358-keys
+printf '%s\n' '#!/bin/sh' 'echo "$*" >> /t/nfc.log' > /opt/mu5358/bin/mu5358-nfc-sync
+# the dashboard stand-in: a shell that notes SIGUSR2 (kill is the shell's builtin: a stub cannot see it)
+if [ -n "$PID" ]; then sh -c 'trap "echo usr2 > /t/usr2" USR2; while :; do sleep 1; done' & echo $! > /t/pid; fi
+printf '%s\n' '#!/bin/sh' '[ -n "$PID" ] && [ "$1" = u30ui2 ] && { cat /t/pid; exit 0; }; exit 1' > /t/stub/pidof
+printf '%s\n' '#!/bin/sh' 'echo poweroff >> /t/poweroff.log' > /t/stub/poweroff
+printf '%s\n' '#!/bin/sh' 'echo "$*" >> /t/logger.log' > /t/stub/logger
+printf '%s\n' '#!/bin/sh' 'exit 0' > /t/stub/uci
+printf '%s\n' '#!/bin/sh' 'exit 0' > /t/stub/wifi
+chmod 755 /opt/mu5358/bin/* /t/stub/*
+echo 0 > /t/bl/bl_power; echo 0 > /t/bl/brightness
+[ -z "$UI" ] || echo "$UI" > /etc/mu5358/ui
+[ "$DASH" = 1 ] && printf '%s\n' '#!/bin/sh' > /opt/mu5358/bin/u30ui2 && chmod 755 /opt/mu5358/bin/u30ui2
+export MU5358_BL=/t/bl
+sh /t/buttons
+sleep 2; cp /tmp/u30ui.cmd /t/u30ui.cmd 2>/dev/null; cat /t/bl/bl_power > /t/bl_power; [ -z "$PID" ] || kill "$(cat /t/pid)"
+"""
+        (self.t / 'keys.in').write_text(keys)
+        r = subprocess.run([DOCKER, 'run', '--rm', '-e', f'UI={ui or ""}', '-e', f'DASH={1 if dashboard else 0}', '-e', f'PID={pid}',
+                            '-v', f'{self.t}:/t', BUSYBOX_IMAGE, 'sh', '-c', stubs], capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return r
+
+    def read(self, name):
+        p = self.t / name
+        return p.read_text() if p.exists() else ''
+
+    def test_dashboard_threshold_1500(self):
+        self.run_buttons('0 tick\n')
+        self.assertEqual(self.read('keys.args').strip(), '-l 1500')
+
+    def test_classic_threshold_3000(self):
+        self.run_buttons('0 tick\n', ui='classic')
+        self.assertEqual(self.read('keys.args').strip(), '-l 3000')
+        self.run_buttons('0 tick\n', dashboard=False)
+        self.assertEqual(self.read('keys.args').strip(), '-l 3000', 'no u30ui2 binary: the classic rule')
+
+    def test_long_press_sends_power_cmd(self):
+        self.run_buttons('116 long\n', pid='4242')
+        self.assertEqual(self.read('u30ui.cmd').strip(), 'power')
+        self.assertEqual(self.read('usr2').strip(), 'usr2', 'the dashboard got SIGUSR2')
+        self.assertEqual(self.read('poweroff.log'), '')
+
+    def test_long_press_no_ui_powers_off(self):
+        self.run_buttons('116 long\n')
+        self.assertEqual(self.read('poweroff.log').strip(), 'poweroff')
+        self.assertEqual(self.read('u30ui.cmd'), '')
+        self.run_buttons('116 long\n', ui='classic', pid='4242')
+        self.assertEqual(self.read('poweroff.log').strip(), 'poweroff', 'the classic UI: the key still powers off')
+
+    def test_short_press_toggles_backlight(self):
+        self.run_buttons('116 short\n')
+        self.assertEqual(self.read('bl_power').strip(), '4')
+        (self.t / 'bl').mkdir(exist_ok=True)
+        self.run_buttons('116 short\n116 short\n')
+        self.assertEqual(self.read('bl_power').strip(), '0')
+
+    def test_wifi_key_syncs_the_tag(self):
+        self.run_buttons('102 long\n')
+        self.assertEqual(self.read('nfc.log').strip(), 'sync')
+
+
 class ScreenRadioLabel(unittest.TestCase):
     """+COPS AcT 13 is E-UTRAN-NR dual connectivity (5G NSA, what this network gives): the dashboard labels it 5G as
     Android does, not LTE (2026-11-01: 'Android says 5G, Linux said 4G')."""

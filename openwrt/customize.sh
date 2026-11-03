@@ -373,8 +373,12 @@ mkdir -p "$R/www/luci-static/resources/mu5358" && cp "$N/nfc.js" "$R/www/luci-st
 # so mu300-buttons' LED logic does not fit. gpio-keys: power 116, volume 114/115, "Wifi Switch Key" 102.
 cat > "$R/opt/mu5358/bin/buttons" <<'EOF'
 #!/bin/sh
-# U30 Pro buttons: power held 3 s shuts down cleanly, a short press switches the screen's backlight off or on; the
-# Wi-Fi key held 3 s switches the hotspot off or on again. Other presses are logged only.
+# U30 Pro buttons: with the dashboard (u30ui2) on the screen, the power key held 1.5 s opens its Power page (restart,
+# power off, ... each behind a 1 s hold ring: tools/u30ui2); with the classic UI or the console, or when no u30ui2
+# process exists at that moment (procd's respawn gap), the key held 3 s shuts down cleanly as before: a key that
+# cannot turn the device off is the worse failure. A short press switches the screen's backlight off or on; the
+# Wi-Fi key held switches the hotspot off or on again. Other presses are logged only. mu5358-screen restarts this
+# service when it starts, so a switch of the UI re-picks the threshold.
 # One reader only: a restart by procd stops this shell, and the old mu5358-keys stays until its next write
 for p in $(pidof mu5358-keys); do kill $p; done
 # The reader runs in the background and this shell waits for it: a shell sits out a trap while a foreground
@@ -389,11 +393,18 @@ stop_children() {
 	return 0
 }
 trap 'stop_children; exit 143' TERM INT HUP
-/opt/mu5358/bin/mu5358-keys -l 3000 | { while read -r code what; do
+dash=0; [ "$(cat /etc/mu5358/ui 2>/dev/null)" != classic ] && [ -x /opt/mu5358/bin/u30ui2 ] && dash=1
+hold=3000; [ $dash = 1 ] && hold=1500
+BL=${MU5358_BL:-/sys/class/backlight/sprd_backlight}
+/opt/mu5358/bin/mu5358-keys -l $hold | { while read -r code what; do
 	case "$code $what" in
 	"116 long")
-		logger -t mu5358-buttons "power held: shutting down"
-		poweroff ;;
+		if [ $dash = 1 ] && p=$(pidof u30ui2) && [ -n "$p" ]; then
+			echo power > /tmp/u30ui.cmd; kill -USR2 $p
+		else
+			logger -t mu5358-buttons "power held: shutting down"
+			poweroff
+		fi ;;
 	"102 long")
 		if [ "$(uci -q get wireless.ap0.disabled)" = 1 ]; then
 			uci set wireless.ap0.disabled=0; logger -t mu5358-buttons "Wi-Fi key held: hotspot on"
@@ -404,8 +415,7 @@ trap 'stop_children; exit 143' TERM INT HUP
 		wifi reload; /opt/mu5358/bin/mu5358-nfc-sync sync ;;
 	"116 short")
 		# bl_power 4 is off (the driver ignores the level then), 0 on
-		b=/sys/class/backlight/sprd_backlight
-		if [ "$(cat $b/bl_power)" = 0 ]; then echo 4 > $b/bl_power; else echo 0 > $b/bl_power; echo 2048 > $b/brightness; fi ;;
+		if [ "$(cat $BL/bl_power)" = 0 ]; then echo 4 > $BL/bl_power; else echo 0 > $BL/bl_power; echo 2048 > $BL/brightness; fi ;;
 	"0 tick") ;;
 	*) logger -t mu5358-buttons "key $code $what" ;;
 	esac
@@ -513,6 +523,8 @@ start_service() {
 	procd_set_param respawn 3600 5 0
 	procd_set_param stderr 1
 	procd_close_instance
+	# the buttons pick their power-key threshold by which UI runs (1.5 s: the dashboard's menu; 3 s: power off)
+	[ -x /etc/init.d/mu5358-buttons ] && /etc/init.d/mu5358-buttons restart >/dev/null 2>&1 &
 }
 EOF
     chmod 755 "$R/etc/init.d/mu5358-screen"

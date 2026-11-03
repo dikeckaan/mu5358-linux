@@ -142,6 +142,21 @@ class Sim(unittest.TestCase):
         out = self.run_sim('set lock off\npage settings\n' + 'uevent battery 1\nuevent battery 0\n' * 500 + 'tap 120 72\nstate\n')
         self.assertEqual(self.states(out)[0]['lang'], 'tr')
 
+    # --- the power key: "power" opens the Power page through the lock, its hold ring still guards the actions
+    def test_power_cmd_wakes_locked(self):
+        out = self.run_sim('set lock hold\nscreen off\nwait 100\ncmd power\nwait 100\nstate\n'
+                           'swipe 200 120 60 120 240\nwait 400\nstate\ndown 120 72\nwait 1100\nup\nwait 100\nstate\n')
+        s = self.states(out)
+        self.assertEqual((s[0]['page'], s[0]['screen'], s[0]['locked']), ('power', 'on', '1'))
+        self.assertEqual(s[1]['page'], 'power', 'a swipe does not leave the page while locked')
+        self.assertEqual(self.runs(out), ['sync; reboot'], 'the hold ring runs the action')
+
+    def test_key_long_is_the_power_cmd(self):
+        out = self.run_sim('screen off\nkey 116 long\nwait 100\nstate\nkey 116 short\nstate\n')
+        s = self.states(out)
+        self.assertEqual((s[0]['page'], s[0]['screen']), ('power', 'on'))
+        self.assertEqual(s[1]['screen'], 'off')
+
 
 class Fuzz(Sim):
     """4000 random events against the ASan/UBSan build: no crash, no sanitizer report, an empty stderr."""

@@ -61,6 +61,7 @@ static int settle_from, settle_to;
 static int hold_row = -1;
 static long hold_t0;
 static int wifi_qr, wifi_show_key, sms_open = -1;
+static int power_key;	/* the Power page was opened by the power key: its actions work through the lock */
 static struct data S;
 static volatile sig_atomic_t want_shot, want_cmd;
 
@@ -848,6 +849,7 @@ static void go_home(void)
 	page = P_HOME;
 	scroll = 0;
 	hold_row = -1;
+	power_key = 0;
 }
 
 static void page_leave(void)
@@ -856,12 +858,33 @@ static void page_leave(void)
 	sms_open = -1;
 	scroll = 0;
 	hold_row = -1;
+	power_key = 0;
+}
+
+/* the Power page's touches: a 1 s hold on restart/power off/modem, a tap on the rest */
+static void power_gesture(struct gesture *g, long now)
+{
+	int r = action_at(g->y);
+
+	if (g->type == G_DOWN && r >= 0 && actions[r].hold) {
+		hold_row = r;
+		hold_t0 = now;
+	} else if (g->type == G_TAP && r >= 0 && !actions[r].hold) {
+		action_run(r);
+	} else if (g->type == G_UP || g->type == G_TAP || (g->type == G_MOVE && action_at(g->y) != hold_row)) {
+		hold_row = -1;
+	}
 }
 
 static void gesture(struct gesture *g, long now)
 {
 	last_touch = now;
 	if (locked) {
+		/* the power key opened the Power page: its actions (behind their hold ring) work, nothing else does */
+		if (page == P_POWER && power_key) {
+			power_gesture(g, now);
+			return;
+		}
 		if (g->type == G_LONG) {
 			locked = 0;
 			flash_until = hint_until = 0;
@@ -947,19 +970,9 @@ static void gesture(struct gesture *g, long now)
 		if (g->type == G_TAP)
 			settings_tap(g->y);
 		break;
-	case P_POWER: {
-		int r = action_at(g->y);
-
-		if (g->type == G_DOWN && r >= 0 && actions[r].hold) {
-			hold_row = r;
-			hold_t0 = now;
-		} else if (g->type == G_TAP && r >= 0 && !actions[r].hold) {
-			action_run(r);
-		} else if (g->type == G_UP || g->type == G_TAP || (g->type == G_MOVE && action_at(g->y) != hold_row)) {
-			hold_row = -1;
-		}
+	case P_POWER:
+		power_gesture(g, now);
 		break;
-	}
 	}
 }
 
@@ -1219,6 +1232,13 @@ static int ui_command(const char *line)
 		lang = !strcmp(w, "tr") ? L_TR : !strcmp(w, "zh") ? L_ZH : L_EN;
 	} else if (!strncmp(line, "screen on", 9)) {
 		display_backlight(1);
+	} else if (!strncmp(line, "power", 5)) {
+		/* the power key held (buttons): the screen on and the Power page, through the lock */
+		display_backlight(1);
+		page_leave();
+		page = P_POWER;
+		power_key = 1;
+		last_touch = now;
 	} else {
 		return 0;
 	}
