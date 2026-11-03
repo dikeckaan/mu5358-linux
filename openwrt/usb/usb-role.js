@@ -21,7 +21,7 @@ return baseclass.extend({
 				E('button', { 'class': 'mud-btn', 'id': 'mud-usb-role-host' }, _('Host')),
 				E('button', { 'class': 'mud-btn', 'id': 'mud-usb-role-device' }, _('Device'))
 			]),
-			E('div', { 'class': 'mud-note' }, _('Host powers a USB stick, keyboard or network adapter on an OTG adapter. It undoes itself after 60 seconds unless kept from a shell, because the port is also the way to the computer. Changing the policy may replug the USB link for a moment.')),
+			E('div', { 'class': 'mud-note' }, _('Host powers a USB stick, keyboard or network adapter on an OTG adapter. It undoes itself after 60 seconds unless kept from a shell, because the port is also the way to the computer; asking for it replugs the USB link for a few seconds. Automatic and Device keep the link.')),
 			E('div', { 'class': 'mud-note', 'id': 'mud-usb-role-msg', 'role': 'status', 'aria-live': 'polite' })
 		]);
 		root.insertBefore(card, before || null);

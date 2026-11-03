@@ -21,7 +21,9 @@
 #                                    Without a writable port_type, "host" is a data role swap (needs a USB-PD partner;
 #                                    this kernel's role switch takes no writes from userspace). "host" undoes itself
 #                                    after 60 s (back to dual, or device) unless /run/mu5358/usb-host-keep exists.
-#                                    Changing the policy may replug the USB link for a moment.
+#                                    Bench 2026-11-03: auto and device kept the Mac's link; host dropped it for 5 s
+#                                    (the port re-attached as a peripheral: the computer is the source), the undo
+#                                    put dual back. The OTG adapter test is the maintainer's.
 #   mu5358-usb boot                  at boot (/etc/init.d/mu5358-usb-boot): configfs mounted, the disk's medium put in
 #                                    (the image made when missing), the mode init applied noted for the panel. Never a
 #                                    rebind here: a live link to the computer is not cut at boot.
@@ -293,7 +295,7 @@ role() {  # role auto|host|device
         else
             die "no writable port_type: the policy auto is not available on this kernel (device and host are)"
         fi
-        echo "USB: $1 (the network link and the console to the computer; the link may replug for a moment)"
+        echo "USB: $1 (the network link and the console to the computer)"
         return 0
     fi
     if port_type_ok; then
